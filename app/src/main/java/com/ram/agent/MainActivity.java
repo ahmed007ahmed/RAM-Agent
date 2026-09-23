@@ -14,7 +14,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-
+import android.speech.tts.TextToSpeech;
+import java.util.Locale;
 import java.util.ArrayList;
 
 public class MainActivity extends Activity {
@@ -22,12 +23,18 @@ public class MainActivity extends Activity {
     private LinearLayout container;
     private TextView statusText;
     private static final int VOICE_REQUEST = 33;
-
+private TextToSpeech textToSpeech;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         showHome();
+textToSpeech = new TextToSpeech(this, status -> {
+    if (status == TextToSpeech.SUCCESS) {
+        textToSpeech.setLanguage(new Locale("ar"));
+        textToSpeech.setSpeechRate(0.95f);
+        textToSpeech.setPitch(1.0f);
     }
+});    }
 
     private void showHome() {
 
@@ -379,7 +386,14 @@ public class MainActivity extends Activity {
 RamEngine ramEngine = new RamEngine(this);
 
 String response = ramEngine.executeCommand(command);
-
+if (textToSpeech != null) {
+    textToSpeech.speak(
+        response,
+        TextToSpeech.QUEUE_FLUSH,
+        null,
+        "RAM_RESPONSE"
+    );
+}
 statusText.setText(
         "● الأمر: " + command +
         "\n\n● رد RAM:\n" + response
