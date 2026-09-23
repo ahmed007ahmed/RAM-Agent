@@ -423,6 +423,8 @@ aiService.askAI(command, new AIService.AIResponseCallback() {
 });
         }
     }
+  }
+    
 }                
                     
             
