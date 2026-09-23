@@ -385,26 +385,45 @@ textToSpeech = new TextToSpeech(this, status -> {
                 String command = results.get(0);
 RamEngine ramEngine = new RamEngine(this);
 
-String response = ramEngine.executeCommand(command);
-if (textToSpeech != null) {
-    textToSpeech.speak(
-        response,
-        TextToSpeech.QUEUE_FLUSH,
-        null,
-        "RAM_RESPONSE"
-    );
-}
-statusText.setText(
-        "● الأمر: " + command +
-        "\n\n● رد RAM:\n" + response
-);
+AIService aiService = new AIService();
 
-Toast.makeText(
-        this,
-        "تم تنفيذ الأمر بواسطة RAM",
-        Toast.LENGTH_LONG
-).show();
-                
+statusText.setText("RAM يفكر في الرد...");
+
+aiService.askAI(command, new AIService.AIResponseCallback() {
+    @Override
+    public void onSuccess(String response) {
+        statusText.setText(
+                "• الأمر: " + command +
+                "\n\nRAM:\n" + response
+        );
+
+        if (textToSpeech != null) {
+            textToSpeech.speak(
+                    response,
+                    TextToSpeech.QUEUE_FLUSH,
+                    null,
+                    "RAM_AI_RESPONSE"
+            );
+        }
+    }
+
+    @Override
+    public void onError(String error) {
+        statusText.setText(
+                "• الأمر: " + command +
+                "\n\nتعذر الحصول على رد RAM:\n" + error
+        );
+
+        Toast.makeText(
+                MainActivity.this,
+                error,
+                Toast.LENGTH_LONG
+        ).show();
+    }
+});
+        }
+    }
+}                
                     
             
 
@@ -413,7 +432,7 @@ Toast.makeText(
             
                         
             
-            }
-        }
-    }
-}
+            
+        
+    
+
