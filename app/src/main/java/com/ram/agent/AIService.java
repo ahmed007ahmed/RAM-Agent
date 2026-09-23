@@ -16,7 +16,7 @@ import java.nio.charset.StandardCharsets;
 public class AIService {
 
     private static final String API_URL =
-            "https://ram-agent-production.up.railway.app/ask";
+            "https://ram-agent-production.up.railway.app/chat";
 
     public interface AIResponseCallback {
         void onSuccess(String response);
