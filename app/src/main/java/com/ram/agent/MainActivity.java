@@ -342,16 +342,29 @@ public class MainActivity extends Activity {
                     && !results.isEmpty()) {
 
                 String command = results.get(0);
+RamEngine ramEngine = new RamEngine(this);
 
-                statusText.setText(
-                        "● الأمر: " + command
-                );
+String response = ramEngine.executeCommand(command);
 
-                Toast.makeText(
-                        this,
-                        "RAM استقبل الأمر: " + command,
-                        Toast.LENGTH_LONG
-                ).show();
+statusText.setText(
+        "● الأمر: " + command +
+        "\n\n● رد RAM:\n" + response
+);
+
+Toast.makeText(
+        this,
+        "تم تنفيذ الأمر بواسطة RAM",
+        Toast.LENGTH_LONG
+).show();
+                
+                    
+            
+
+                
+                    
+            
+                        
+            
             }
         }
     }
