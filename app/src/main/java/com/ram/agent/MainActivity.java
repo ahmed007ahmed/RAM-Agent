@@ -98,6 +98,8 @@ public class MainActivity extends Activity {
         messageInput.setHint("اكتب رسالتك إلى رام...");
         messageInput.setTextColor(Color.WHITE);
         messageInput.setHintTextColor(Color.GRAY);
+        messageInput.setImeOptions(android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         messageInput.setTextSize(16);
         messageInput.setSingleLine(false);
         messageInput.setMaxLines(4);
@@ -214,7 +216,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams params =
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        300
+                        LinearLayout.LayoutParams.WRAP_CONTENT
                 );
 
         root.addView(actionScroll, params);
