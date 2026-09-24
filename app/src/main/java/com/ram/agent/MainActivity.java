@@ -240,15 +240,18 @@ public class MainActivity extends Activity {
 
                             removeThinkingMessage();
 
-                            if (response == null ||
-                                    response.trim().isEmpty()) {
+                            String finalResponse = response;
 
-                                response =
-                                        "وصلني الطلب، لكن الخادم أعاد رداً فارغاً.";
-                            }
+if (finalResponse == null ||
+        finalResponse.trim().isEmpty()) {
 
-                            addRamMessage(response);
-                            speak(response);
+    finalResponse =
+            "وصلني الطلب، لكن الخادم أعاد رداً فارغاً.";
+}
+
+final String safeResponse = finalResponse;
+addRamMessage(safeResponse);
+speak(safeResponse);
                         });
                     }
 
