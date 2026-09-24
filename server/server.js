@@ -17,13 +17,18 @@ async function callGemini(model, prompt, apiKey) {
         "x-goog-api-key": apiKey
       },
       body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }]
-          }
-        ]
-      })
+  contents: [
+    {
+      role: "user",
+      parts: [{ text: prompt }]
+    }
+  ],
+  tools: [
+    {
+      google_search: {}
+    }
+  ]
+})
     }
   );
 
