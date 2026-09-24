@@ -7,6 +7,30 @@ app.get("/", (req, res) => {
   res.send("RAM AI Server is running with Gemini...");
 });
 
+async function callGemini(model, prompt, apiKey) {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: prompt }]
+          }
+        ]
+      })
+    }
+  );
+
+  const data = await response.json();
+  return { response, data };
+}
+
 app.post("/chat", async (req, res) => {
   try {
     const message = req.body.message;
@@ -27,66 +51,63 @@ app.post("/chat", async (req, res) => {
 
     const prompt = `
 أنت رام عشيش، مساعد ذكاء اصطناعي عربي يعمل لدى أحمد عشيش.
-أنت مساعد عملي لإدارة الأعمال والمهام والعملاء والمتابعات
+
+تحدث مع أحمد بصورة طبيعية وذكية ومباشرة.
+ساعده في إدارة الأعمال والمهام والعملاء والمتابعات
 والشحن واللوجستيات والعقارات والتصميم والترجمة والأبحاث.
 
-تحدث مع المستخدم بصورة طبيعية وذكية مثل مساعد محادثة متقدم.
-أجب باللغة العربية ما لم يطلب المستخدم لغة أخرى.
-لا تدّع تنفيذ عمل خارجي أو إرسال رسالة أو إجراء اتصال
-إلا إذا كانت أداة التنفيذ المطلوبة متصلة فعلاً.
+أجب بالعربية ما لم يطلب لغة أخرى.
+لا تدّع أنك نفذت اتصالاً أو رسالة أو معاملة خارجية
+إلا عندما تكون أداة التنفيذ المطلوبة متصلة فعلاً.
 
-رسالة المستخدم:
+رسالة أحمد:
 ${message}
 `;
 
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: prompt
-                }
-              ]
-            }
-          ]
-        })
+    const models = [
+      "gemini-3.8-flash",
+      "gemini-3.5-flash-lite"
+    ];
+
+    let lastStatus = 500;
+    let lastData = null;
+
+    for (const model of models) {
+      const result = await callGemini(model, prompt, apiKey);
+
+      lastStatus = result.response.status;
+      lastData = result.data;
+
+      if (result.response.ok) {
+        const reply =
+          result.data?.candidates?.[0]?.content?.parts
+            ?.map(part => part.text || "")
+            .join("")
+            .trim();
+
+        if (reply) {
+          return res.json({
+            reply: reply,
+            response: reply,
+            model: model
+          });
+        }
       }
-    );
 
-    const data = await response.json();
+      console.error(
+        `Gemini model ${model} failed:`,
+        result.response.status,
+        result.data
+      );
 
-    if (!response.ok) {
-      console.error("Gemini error:", data);
-      return res.status(response.status).json({
-        error: "Gemini API error",
-        details: data
-      });
+      if (result.response.status !== 503) {
+        break;
+      }
     }
 
-    const reply =
-      data?.candidates?.[0]?.content?.parts
-        ?.map(part => part.text || "")
-        .join("")
-        .trim();
-
-    if (!reply) {
-      return res.status(500).json({
-        error: "لم يصل رد نصي من Gemini"
-      });
-    }
-
-    res.json({
-      reply: reply,
-      response: reply
+    return res.status(lastStatus).json({
+      error: "تعذر الحصول على رد من Gemini",
+      details: lastData
     });
 
   } catch (error) {
