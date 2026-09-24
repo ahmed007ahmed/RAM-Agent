@@ -73,7 +73,7 @@ public class MainActivity extends Activity {
 
         createQuickActions();
 
-        chatScroll = new ScrollView(this);
+        chatScroll = new ScrollView(this);chatScroll.setFillViewport(true);
 
         chatContainer = new LinearLayout(this);
         chatContainer.setOrientation(LinearLayout.VERTICAL);
@@ -135,7 +135,10 @@ public class MainActivity extends Activity {
 
         inputRow.addView(sendButton);
 
-        root.addView(inputRow);
+        root.addView(inputRow, new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT
+));
 
         setContentView(root);
     }
