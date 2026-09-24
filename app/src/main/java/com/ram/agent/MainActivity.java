@@ -2,271 +2,327 @@ package com.ram.agent;
 
 import android.app.Activity;
 import android.os.Bundle;
-import android.graphics.Color;
 import android.content.Intent;
-import android.net.Uri;
-import android.provider.Settings;
+import android.graphics.Color;
 import android.speech.RecognizerIntent;
+import android.speech.tts.TextToSpeech;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.speech.tts.TextToSpeech;
-import java.util.Locale;
+
 import java.util.ArrayList;
+import java.util.Locale;
 
 public class MainActivity extends Activity {
 
-    private LinearLayout container;
-    private TextView statusText;
-    private static final int VOICE_REQUEST = 33;
-private TextToSpeech textToSpeech;
+    private static final int VOICE_REQUEST = 1001;
+
+    private LinearLayout root;
+    private LinearLayout chatContainer;
+    private ScrollView chatScroll;
+    private EditText messageInput;
+
+    private TextToSpeech textToSpeech;
+    private AIService aiService;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        showHome();
-textToSpeech = new TextToSpeech(this, status -> {
-    if (status == TextToSpeech.SUCCESS) {
-        textToSpeech.setLanguage(new Locale("ar"));
-        textToSpeech.setSpeechRate(0.95f);
-        textToSpeech.setPitch(1.0f);
-    }
-});    }
 
-    private void showHome() {
+        aiService = new AIService();
 
-        ScrollView scrollView = new ScrollView(this);
+        setupVoice();
+        buildInterface();
 
-        container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.VERTICAL);
-        container.setPadding(30, 45, 30, 45);
-        container.setGravity(Gravity.CENTER_HORIZONTAL);
-        container.setBackgroundColor(Color.rgb(15, 16, 22));
-
-        addText("RAM Agent V3", 34, Color.WHITE);
-
-        addText(
-                "المساعد الذكي لإدارة الأعمال والمهام",
-                20,
-                Color.LTGRAY
+        addRamMessage(
+                "مرحباً أحمد.\n" +
+                "أنا رام عشيش، مساعدك الذكي.\n" +
+                "تحدث معي أو اكتب ما تريد، وسأحاول مساعدتك مباشرة."
         );
 
-        statusText = addText(
-                "● RAM V3 جاهز للعمل",
-                20,
-                Color.GREEN
-        );
-
-        addButton("🎙 الأوامر الصوتية", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startVoice();
-            }
-        });
-
-        addButton("📋 المهام والأعمال", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showPanel(
-                        "مركز المهام والأعمال",
-                        "• فرص العمل\n\n" +
-                        "• المهام الحالية\n\n" +
-                        "• المهام ذات الأولوية\n\n" +
-                        "• متابعة الأعمال\n\n" +
-                        "• سجل الإنجاز"
-                );
-            }
-        });
-
-        addButton("👥 العملاء", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showPanel(
-                        "إدارة العملاء",
-                        "• العملاء المحتملون\n\n" +
-                        "• العملاء الحاليون\n\n" +
-                        "• بيانات التواصل\n\n" +
-                        "• المتابعات\n\n" +
-                        "• حالة الصفقة"
-                );
-            }
-        });
-
-        addButton("☎ المكالمات", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showPanel(
-                        "مركز المكالمات",
-                        "• جهات الاتصال\n\n" +
-                        "• فتح شاشة الاتصال\n\n" +
-                        "• تعليمات المكالمات\n\n" +
-                        "• متابعة المكالمات\n\n" +
-                        "• ملخص المكالمة"
-                );
-            }
-        });
-
-        addButton("🍽 الحجوزات والطلبات", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showPanel(
-                        "الحجوزات والطلبات",
-                        "• حجوزات المطاعم\n\n" +
-                        "• المواعيد\n\n" +
-                        "• الطلبات\n\n" +
-                        "• متابعة حالة الحجز"
-                );
-            }
-        });
-
-        addButton("🚚 الشحن والخدمات اللوجستية", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showPanel(
-                        "الشحن والخدمات اللوجستية",
-                        "• الشحن البحري\n\n" +
-                        "• الشحن الجوي\n\n" +
-                        "• الشحن البري\n\n" +
-                        "• الموردون والمشترون\n\n" +
-                        "• متابعة الشحنات"
-                );
-            }
-        });
-
-        addButton("🏢 العقارات والوساطة", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showPanel(
-                        "العقارات والوساطة",
-                        "• عروض العقارات\n\n" +
-                        "• طلبات البيع والشراء\n\n" +
-                        "• الإيجارات\n\n" +
-                        "• مطابقة العملاء\n\n" +
-                        "• متابعة الصفقات"
-                );
-            }
-        });
-
-        addButton("🌐 المواقع والتصميم والترجمة", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showPanel(
-                        "الخدمات الرقمية",
-                        "• تصميم المواقع\n\n" +
-                        "• البرمجة\n\n" +
-                        "• التصميم الهندسي و3D\n\n" +
-                        "• التصميم الإعلاني\n\n" +
-                        "• الترجمة\n\n" +
-                        "• الأبحاث والاستشارات"
-                );
-            }
-        });
-
-        addButton("📊 التقرير اليومي", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showPanel(
-                        "التقرير اليومي",
-                        "• المهام المنجزة\n\n" +
-                        "• المهام المفتوحة\n\n" +
-                        "• العملاء والمتابعات\n\n" +
-                        "• الصفقات\n\n" +
-                        "• النتائج اليومية"
-                );
-            }
-        });
-        addButton("💰 المستحقات واستلام الأموال", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showPanel(
-                        "المستحقات واستلام الأموال",
-                        "• المهمة أو العمل المنجز\n\n" +
-                        "• اسم العميل أو الشركة\n\n" +
-                        "• المبلغ والعملة\n\n" +
-                        "• حالة الدفع: بانتظار الدفع / تم الاستلام\n\n" +
-                        "• تحويل بنكي: رقم أو مرجع التحويل\n\n" +
-                        "• Western Union: رقم الحوالة MTCN\n\n" +
-                        "• MoneyGram: الرقم المرجعي\n\n" +
-                        "• USDT: الشبكة ورقم TXID\n\n" +
-                        "• ربط المستحقات بالمهمة بعد إنجازها\n\n" +
-                        "• لا يعتبر المبلغ مستلماً إلا بعد التحقق"
-                );
-            }
-        });
-
-        addButton("🌍 البحث والتنسيق اللوجستي", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showPanel(
-                        "البحث والتنسيق اللوجستي",
-                        "• البحث عن العملاء والأعمال والشركات من مصادر متعددة حول العالم\n\n" +
-                        "• ربط التجار بالموردين والمشترين\n\n" +
-                        "• التنسيق بين التاجر وشركات الشحن\n\n" +
-                        "• الشحن البحري والجوي والبري\n\n" +
-                        "• متابعة عروض الأسعار والتحميل والوجهة والتسليم\n\n" +
-                        "• متابعة المستندات وحالة الصفقة\n\n" +
-                        "• ربط كل عمل منجز بالمستحقات والعمولة\n\n" +
-                        "• المدفوعات والعقود النهائية تتطلب موافقة المستخدم"
-                );
-            }
-        });
-        addButton("⚙ إعدادات RAM", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-
-                Intent intent =
-                        new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-
-                intent.setData(
-                        Uri.parse("package:" + getPackageName())
-                );
-
-                startActivity(intent);
-            }
-        });
-
-        addText(
-                "RAM Agent V3\nالعمليات المالية الحساسة تتطلب موافقة المستخدم",
-                14,
-                Color.GRAY
-        );
-
-        scrollView.addView(container);
-        setContentView(scrollView);
+        speak("مرحباً أحمد. أنا رام عشيش. كيف أستطيع مساعدتك؟");
     }
 
-    private TextView addText(
-            String text,
-            int size,
-            int color
-    ) {
+    private void buildInterface() {
 
-        TextView textView = new TextView(this);
+        root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(18, 18, 18, 18);
+        root.setBackgroundColor(Color.rgb(14, 15, 20));
 
-        textView.setText(text);
-        textView.setTextSize(size);
-        textView.setTextColor(color);
-        textView.setGravity(Gravity.CENTER);
-        textView.setPadding(0, 12, 0, 18);
+        TextView title = new TextView(this);
+        title.setText("RAM");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(30);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(10, 15, 10, 5);
+        root.addView(title);
 
-        container.addView(textView);
+        TextView subtitle = new TextView(this);
+        subtitle.setText("رام عشيش — المساعد الذكي");
+        subtitle.setTextColor(Color.rgb(80, 220, 120));
+        subtitle.setTextSize(17);
+        subtitle.setGravity(Gravity.CENTER);
+        subtitle.setPadding(5, 0, 5, 15);
+        root.addView(subtitle);
 
-        return textView;
+        createQuickActions();
+
+        chatScroll = new ScrollView(this);
+
+        chatContainer = new LinearLayout(this);
+        chatContainer.setOrientation(LinearLayout.VERTICAL);
+        chatContainer.setPadding(5, 10, 5, 10);
+
+        chatScroll.addView(chatContainer);
+
+        LinearLayout.LayoutParams scrollParams =
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        0,
+                        1
+                );
+
+        root.addView(chatScroll, scrollParams);
+
+        LinearLayout inputRow = new LinearLayout(this);
+        inputRow.setOrientation(LinearLayout.HORIZONTAL);
+        inputRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        messageInput = new EditText(this);
+        messageInput.setHint("اكتب رسالتك إلى رام...");
+        messageInput.setTextColor(Color.WHITE);
+        messageInput.setHintTextColor(Color.GRAY);
+        messageInput.setTextSize(16);
+        messageInput.setSingleLine(false);
+        messageInput.setMaxLines(4);
+        messageInput.setBackgroundColor(Color.rgb(35, 37, 45));
+        messageInput.setPadding(16, 12, 16, 12);
+
+        LinearLayout.LayoutParams inputParams =
+                new LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        1
+                );
+
+        inputRow.addView(messageInput, inputParams);
+
+        Button voiceButton = new Button(this);
+        voiceButton.setText("🎤");
+        voiceButton.setTextSize(20);
+        voiceButton.setOnClickListener(v -> startVoice());
+
+        inputRow.addView(voiceButton);
+
+        Button sendButton = new Button(this);
+        sendButton.setText("إرسال");
+        sendButton.setOnClickListener(v -> {
+            String message = messageInput.getText().toString().trim();
+
+            if (!message.isEmpty()) {
+                messageInput.setText("");
+                sendToRam(message);
+            }
+        });
+
+        inputRow.addView(sendButton);
+
+        root.addView(inputRow);
+
+        setContentView(root);
     }
 
-    private void addButton(
+    private void createQuickActions() {
+
+        ScrollView actionScroll = new ScrollView(this);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.VERTICAL);
+
+        addActionButton(
+                actions,
+                "💼 فرص العمل",
+                "ابحث معي عن فرص عمل مناسبة في التصميم والبرمجة والترجمة والأبحاث والخدمات الرقمية."
+        );
+
+        addActionButton(
+                actions,
+                "📋 المهام",
+                "ساعدني في تنظيم مهامي الحالية حسب الأولوية والحالة والخطوة التالية."
+        );
+
+        addActionButton(
+                actions,
+                "👥 العملاء",
+                "ساعدني في إدارة العملاء والمتابعات والعروض والطلبات."
+        );
+
+        addActionButton(
+                actions,
+                "🚢 الشحن واللوجستيات",
+                "ساعدني في أعمال الشحن البحري والجوي والبري واللوجستيات وربط العملاء بمقدمي الخدمات."
+        );
+
+        addActionButton(
+                actions,
+                "🏢 العقارات والوساطة",
+                "ساعدني في تنظيم أعمال العقارات والبيع والشراء والإيجار والوساطة."
+        );
+
+        addActionButton(
+                actions,
+                "🌐 المواقع والتصميم",
+                "ساعدني في أعمال تصميم المواقع والواجهات والإعلانات والجرافيك."
+        );
+
+        addActionButton(
+                actions,
+                "🌍 الترجمة والأبحاث",
+                "ساعدني في أعمال الترجمة والبحث وإعداد التقارير والاستشارات."
+        );
+
+        addActionButton(
+                actions,
+                "📊 تقرير العمل",
+                "أنشئ لي تقريراً منظماً عن المهام والأعمال التي نناقشها وما يحتاج إلى متابعة."
+        );
+
+        actionScroll.addView(actions);
+
+        LinearLayout.LayoutParams params =
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        300
+                );
+
+        root.addView(actionScroll, params);
+    }
+
+    private void addActionButton(
+            LinearLayout parent,
             String title,
-            View.OnClickListener listener
+            String instruction
     ) {
 
         Button button = new Button(this);
-
         button.setText(title);
-        button.setTextSize(19);
+        button.setTextSize(16);
         button.setAllCaps(false);
+
+        button.setOnClickListener(v -> sendToRam(instruction));
+
+        parent.addView(button);
+    }
+
+    private void sendToRam(String message) {
+
+        if (message == null || message.trim().isEmpty()) {
+            return;
+        }
+
+        addUserMessage(message);
+        addSystemMessage("رام يفكر...");
+
+        aiService.askAI(
+                message,
+                new AIService.AIResponseCallback() {
+
+                    @Override
+                    public void onSuccess(String response) {
+
+                        runOnUiThread(() -> {
+
+                            removeThinkingMessage();
+
+                            if (response == null ||
+                                    response.trim().isEmpty()) {
+
+                                response =
+                                        "وصلني الطلب، لكن الخادم أعاد رداً فارغاً.";
+                            }
+
+                            addRamMessage(response);
+                            speak(response);
+                        });
+                    }
+
+                    @Override
+                    public void onError(String error) {
+
+                        runOnUiThread(() -> {
+
+                            removeThinkingMessage();
+
+                            String message =
+                                    "تعذر الحصول على رد RAM.\n" +
+                                    (error == null
+                                            ? "خطأ غير معروف."
+                                            : error);
+
+                            addRamMessage(message);
+                        });
+                    }
+                }
+        );
+    }
+
+    private void addUserMessage(String message) {
+
+        TextView text = createMessageView(
+                "أنت:\n" + message,
+                Color.rgb(45, 90, 160)
+        );
+
+        text.setTag("user");
+        chatContainer.addView(text);
+
+        scrollToBottom();
+    }
+
+    private void addRamMessage(String message) {
+
+        TextView text = createMessageView(
+                "RAM:\n" + message,
+                Color.rgb(40, 45, 55)
+        );
+
+        text.setTag("ram");
+        chatContainer.addView(text);
+
+        scrollToBottom();
+    }
+
+    private void addSystemMessage(String message) {
+
+        TextView text = createMessageView(
+                message,
+                Color.rgb(60, 60, 60)
+        );
+
+        text.setTag("thinking");
+        chatContainer.addView(text);
+
+        scrollToBottom();
+    }
+
+    private TextView createMessageView(
+            String message,
+            int backgroundColor
+    ) {
+
+        TextView text = new TextView(this);
+
+        text.setText(message);
+        text.setTextColor(Color.WHITE);
+        text.setTextSize(17);
+        text.setPadding(18, 14, 18, 14);
+        text.setBackgroundColor(backgroundColor);
 
         LinearLayout.LayoutParams params =
                 new LinearLayout.LayoutParams(
@@ -274,73 +330,64 @@ textToSpeech = new TextToSpeech(this, status -> {
                         LinearLayout.LayoutParams.WRAP_CONTENT
                 );
 
-        params.setMargins(0, 8, 0, 8);
+        params.setMargins(5, 7, 5, 7);
 
-        button.setLayoutParams(params);
-        button.setOnClickListener(listener);
+        text.setLayoutParams(params);
 
-        container.addView(button);
+        return text;
     }
 
-    private void showPanel(
-            String title,
-            String body
-    ) {
+    private void removeThinkingMessage() {
 
-        container.removeAllViews();
+        for (int i = chatContainer.getChildCount() - 1; i >= 0; i--) {
 
-        addText(
-                "RAM Agent V3",
-                28,
-                Color.WHITE
-        );
+            View view = chatContainer.getChildAt(i);
 
-        addText(
-                title,
-                25,
-                Color.GREEN
-        );
+            Object tag = view.getTag();
 
-        TextView information =
-                addText(
-                        body,
-                        20,
-                        Color.WHITE
-                );
+            if (tag != null &&
+                    tag.toString().equals("thinking")) {
 
-        information.setGravity(Gravity.RIGHT);
-
-        addButton("← العودة للرئيسية", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showHome();
+                chatContainer.removeViewAt(i);
+                break;
             }
-        });
+        }
+    }
+
+    private void scrollToBottom() {
+
+        if (chatScroll == null) {
+            return;
+        }
+
+        chatScroll.post(() ->
+                chatScroll.fullScroll(View.FOCUS_DOWN)
+        );
     }
 
     private void startVoice() {
 
-        Intent intent =
-                new Intent(
-                        RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-                );
-
-        intent.putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-        );
-
-        intent.putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE,
-                "ar"
-        );
-
-        intent.putExtra(
-                RecognizerIntent.EXTRA_PROMPT,
-                "تحدث إلى RAM"
-        );
-
         try {
+
+            Intent intent =
+                    new Intent(
+                            RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+                    );
+
+            intent.putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            );
+
+            intent.putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE,
+                    "ar"
+            );
+
+            intent.putExtra(
+                    RecognizerIntent.EXTRA_PROMPT,
+                    "تحدث مع رام..."
+            );
 
             startActivityForResult(
                     intent,
@@ -351,7 +398,7 @@ textToSpeech = new TextToSpeech(this, status -> {
 
             Toast.makeText(
                     this,
-                    "خدمة التعرف الصوتي غير متاحة على الهاتف",
+                    "التعرف الصوتي غير متاح على هذا الجهاز.",
                     Toast.LENGTH_LONG
             ).show();
         }
@@ -370,71 +417,88 @@ textToSpeech = new TextToSpeech(this, status -> {
                 data
         );
 
-        if (requestCode == VOICE_REQUEST
-                && resultCode == RESULT_OK
-                && data != null) {
+        if (requestCode == VOICE_REQUEST &&
+                resultCode == RESULT_OK &&
+                data != null) {
 
             ArrayList<String> results =
                     data.getStringArrayListExtra(
                             RecognizerIntent.EXTRA_RESULTS
                     );
 
-            if (results != null
-                    && !results.isEmpty()) {
+            if (results != null &&
+                    !results.isEmpty()) {
 
-                String command = results.get(0);
-RamEngine ramEngine = new RamEngine(this);
+                String spoken =
+                        results.get(0);
 
-AIService aiService = new AIService();
+                messageInput.setText("");
 
-statusText.setText("RAM يفكر في الرد...");
+                sendToRam(spoken);
+            }
+        }
+    }
 
-aiService.askAI(command, new AIService.AIResponseCallback() {
-    @Override
-    public void onSuccess(String response) {
-        statusText.setText(
-                "• الأمر: " + command +
-                "\n\nRAM:\n" + response
+    private void setupVoice() {
+
+        textToSpeech =
+                new TextToSpeech(
+                        this,
+                        status -> {
+
+                            if (status ==
+                                    TextToSpeech.SUCCESS) {
+
+                                int result =
+                                        textToSpeech.setLanguage(
+                                                new Locale("ar")
+                                        );
+
+                                textToSpeech.setSpeechRate(0.95f);
+                                textToSpeech.setPitch(1.0f);
+
+                                if (result ==
+                                        TextToSpeech.LANG_MISSING_DATA ||
+                                        result ==
+                                                TextToSpeech.LANG_NOT_SUPPORTED) {
+
+                                    Toast.makeText(
+                                            this,
+                                            "الصوت العربي غير مثبت بالكامل.",
+                                            Toast.LENGTH_SHORT
+                                    ).show();
+                                }
+                            }
+                        }
+                );
+    }
+
+    private void speak(String text) {
+
+        if (textToSpeech == null ||
+                text == null ||
+                text.trim().isEmpty()) {
+
+            return;
+        }
+
+        textToSpeech.speak(
+                text,
+                TextToSpeech.QUEUE_FLUSH,
+                null,
+                "RAM_REPLY"
         );
+    }
+
+    @Override
+    protected void onDestroy() {
 
         if (textToSpeech != null) {
-            textToSpeech.speak(
-                    response,
-                    TextToSpeech.QUEUE_FLUSH,
-                    null,
-                    "RAM_AI_RESPONSE"
-            );
+
+            textToSpeech.stop();
+            textToSpeech.shutdown();
         }
+
+        super.onDestroy();
     }
-
-    @Override
-    public void onError(String error) {
-        statusText.setText(
-                "• الأمر: " + command +
-                "\n\nتعذر الحصول على رد RAM:\n" + error
-        );
-
-        Toast.makeText(
-                MainActivity.this,
-                error,
-                Toast.LENGTH_LONG
-        ).show();
-    }
-});
-        }
-    }
-  }
-    
-}                
-                    
-            
-
-                
-                    
-            
-                        
-            
-            
-        
-    
-
+}
