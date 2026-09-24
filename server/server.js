@@ -4,37 +4,8 @@ const app = express();
 app.use(express.json());
 
 app.get("/", (req, res) => {
-  res.send("RAM AI Server is running with Gemini...");
+  res.send("RAM AI Server is running with OpenRouter");
 });
-
-async function callGemini(model, prompt, apiKey) {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey
-      },
-      body: JSON.stringify({
-  contents: [
-    {
-      role: "user",
-      parts: [{ text: prompt }]
-    }
-  ],
-  tools: [
-    {
-      google_search: {}
-    }
-  ]
-})
-    }
-  );
-
-  const data = await response.json();
-  return { response, data };
-}
 
 app.post("/chat", async (req, res) => {
   try {
@@ -46,83 +17,81 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.OPENROUTER_API_KEY;
 
     if (!apiKey) {
       return res.status(500).json({
-        error: "GEMINI_API_KEY is missing"
+        error: "OPENROUTER_API_KEY is missing"
       });
     }
 
-    const prompt = `
-أنت رام عشيش، مساعد ذكاء اصطناعي عربي يعمل لدى أحمد عشيش.
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "openrouter/free",
+          messages: [
+            {
+              role: "system",
+              content: `أنت رام عشيش، مساعد ذكاء اصطناعي عربي يعمل لدى أحمد عشيش.
 
 تحدث مع أحمد بصورة طبيعية وذكية ومباشرة.
-ساعده في إدارة الأعمال والمهام والعملاء والمتابعات
-والشحن واللوجستيات والعقارات والتصميم والترجمة والأبحاث.
+ساعده في إدارة الأعمال والمهام والعملاء والمتابعات،
+والشحن واللوجستيات والعقارات وتصميم المواقع
+والبرمجة والتصميم والترجمة والأبحاث والخدمات الرقمية.
 
-أجب بالعربية ما لم يطلب لغة أخرى.
-لا تدّع أنك نفذت اتصالاً أو رسالة أو معاملة خارجية
-إلا عندما تكون أداة التنفيذ المطلوبة متصلة فعلاً.
+أجب بالعربية ما لم يطلب أحمد لغة أخرى.
 
-رسالة أحمد:
-${message}
-`;
+لا تدّع أنك نفذت اتصالاً أو أرسلت رسالة أو نفذت معاملة
+إلا إذا كانت أداة التنفيذ المطلوبة متصلة فعلاً.
 
-    const models = [
-  "gemini-3.8-flash",
-  "gemini-3.7-flash",
-  "gemini-3.6-flash",
-  "gemini-3.5-flash",
-  "gemini-3.5-flash-lite",
-  "gemini-3.1-flash-lite"
-];
-
-    let lastStatus = 500;
-    let lastData = null;
-
-    for (const model of models) {
-      const result = await callGemini(model, prompt, apiKey);
-
-      lastStatus = result.response.status;
-      lastData = result.data;
-
-      if (result.response.ok) {
-        const reply =
-          result.data?.candidates?.[0]?.content?.parts
-            ?.map(part => part.text || "")
-            .join("")
-            .trim();
-
-        if (reply) {
-          return res.json({
-            reply: reply,
-            response: reply,
-            model: model
-          });
-        }
+إذا لم تكن لديك أداة لتنفيذ شيء خارج المحادثة،
+اشرح ذلك بوضوح وساعد أحمد في أقرب خطوة عملية ممكنة.`
+            },
+            {
+              role: "user",
+              content: message
+            }
+          ]
+        })
       }
+    );
 
-      console.error(
-        `Gemini model ${model} failed:`,
-        result.response.status,
-        result.data
-      );
+    const data = await response.json();
 
-      if (result.response.status !== 503) {
-        break;
-      }
+    if (!response.ok) {
+      console.error("OpenRouter error:", response.status, data);
+
+      return res.status(response.status).json({
+        error: "تعذر الحصول على رد من OpenRouter",
+        details: data
+      });
     }
 
-    return res.status(lastStatus).json({
-      error: "تعذر الحصول على رد من Gemini",
-      details: lastData
+    const reply =
+      data?.choices?.[0]?.message?.content?.trim();
+
+    if (!reply) {
+      return res.status(502).json({
+        error: "OpenRouter أعاد رداً فارغاً"
+      });
+    }
+
+    return res.json({
+      reply: reply,
+      response: reply,
+      model: data?.model || "openrouter/free"
     });
 
   } catch (error) {
     console.error("RAM server error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: "حدث خطأ في خادم RAM",
       details: error.message
     });
@@ -132,5 +101,5 @@ ${message}
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`RAM Gemini Server running on port ${PORT}`);
+  console.log(`RAM OpenRouter Server running on port ${PORT}`);
 });
