@@ -525,8 +525,8 @@ public class MainActivity extends Activity {
 
     private void speak(String text) {
 
-        if (!voiceReady ||
-                tts == null ||
+        if (
+                
                 text == null ||
                 text.trim().isEmpty()) {
 
@@ -539,14 +539,7 @@ public class MainActivity extends Activity {
             return;
         }
 
-        tts.stop();
-
-        tts.speak(
-                spoken,
-                TextToSpeech.QUEUE_FLUSH,
-                null,
-                "RAM_REPLY"
-        );
+ playNeuralVoice(spoken);
     }
 
     private String prepareSpeech(String text) {
