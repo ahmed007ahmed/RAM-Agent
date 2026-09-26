@@ -1,4 +1,4 @@
-name: Build APK
+name: Build Signed APK
 
 on:
   workflow_dispatch:
@@ -25,11 +25,24 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build APK
-        run: gradle :app:assembleDebug
+      - name: Restore RAM signing keystore
+        shell: bash
+        env:
+          RAM_KEYSTORE_BASE64: ${{ secrets.RAM_KEYSTORE_BASE64 }}
+        run: |
+          printf '%s' "$RAM_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/ram-release.jks"
+          test -s "$RUNNER_TEMP/ram-release.jks"
 
-      - name: Upload APK
+      - name: Build signed release APK
+        env:
+          RAM_KEYSTORE_FILE: ${{ runner.temp }}/ram-release.jks
+          RAM_KEY_ALIAS: ${{ secrets.RAM_KEY_ALIAS }}
+          RAM_KEYSTORE_PASSWORD: ${{ secrets.RAM_KEYSTORE_PASSWORD }}
+          RAM_KEY_PASSWORD: ${{ secrets.RAM_KEY_PASSWORD }}
+        run: gradle :app:assembleRelease
+
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: RAM-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: RAM-SIGNED-APK
+          path: app/build/outputs/apk/release/app-release.apk
