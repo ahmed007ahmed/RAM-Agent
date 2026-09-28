@@ -26,9 +26,9 @@ jobs:
 
       - name: Restore signing keystore
         env:
-                    RAM_BUSINESS_KEYSTORE_BASE64: ${{ secrets.RAM_KEYSTORE_BASE64 }}
-          RAM_BUSINESS_KEYSTORE_PASSWORD: ${{ secrets.RAM_KEYSTORE_PASSWORD }}          
-                    RAM_BUSINESS_KEY_ALIAS: ${{ secrets.RAM_KEY_ALIAS }}
+          RAM_BUSINESS_KEYSTORE_BASE64: ${{ secrets.RAM_KEYSTORE_BASE64 }}
+          RAM_BUSINESS_KEYSTORE_PASSWORD: ${{ secrets.RAM_KEYSTORE_PASSWORD }}
+          RAM_BUSINESS_KEY_ALIAS: ${{ secrets.RAM_KEY_ALIAS }}
         run: |
           printf '%s' "$RAM_BUSINESS_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/ram-release.jks"
           test -s "$RUNNER_TEMP/ram-release.jks"
@@ -39,27 +39,16 @@ jobs:
 
       - name: Sign APK with permanent RAM key
         env:
-                    RAM_BUSINESS_KEY_ALIAS: ${{ secrets.RAM_KEY_ALIAS }}
-                    RAM_BUSINESS_KEYSTORE_PASSWORD: ${{ secrets.RAM_KEYSTORE_PASSWORD }} 
-                           RAM_BUSINESS_KEY_PASSWORD: ${{ secrets.RAM_KEY_PASSWORD }}
+          RAM_BUSINESS_KEY_ALIAS: ${{ secrets.RAM_KEY_ALIAS }}
+          RAM_BUSINESS_KEYSTORE_PASSWORD: ${{ secrets.RAM_KEYSTORE_PASSWORD }}
+          RAM_BUSINESS_KEY_PASSWORD: ${{ secrets.RAM_KEY_PASSWORD }}
         run: |
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           INPUT_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
           OUTPUT_APK="app/build/outputs/apk/release/RAM-Business-v1.9.apk"
           test -n "$APKSIGNER"
           test -f "$INPUT_APK"
-          rm -f "$OUTPUT_APK"
-
-          set +e
-          "$APKSIGNER" sign             --ks "$RUNNER_TEMP/ram-release.jks"             --ks-key-alias "$RAM_BUSINESS_KEY_ALIAS"             --ks-pass env:RAM_BUSINESS_KEYSTORE_PASSWORD             --key-pass env:RAM_BUSINESS_KEYSTORE_PASSWORD             --out "$OUTPUT_APK" "$INPUT_APK"
-          STATUS=$?
-          set -e
-
-          if [ "$STATUS" -ne 0 ]; then
-            rm -f "$OUTPUT_APK"
-            "$APKSIGNER" sign               --ks "$RUNNER_TEMP/ram-release.jks"               --ks-key-alias "$RAM_BUSINESS_KEY_ALIAS"               --ks-pass env:RAM_BUSINESS_KEYSTORE_PASSWORD               --key-pass env:RAM_BUSINESS_KEY_PASSWORD               --out "$OUTPUT_APK" "$INPUT_APK"
-          fi
-
+          "$APKSIGNER" sign --ks "$RUNNER_TEMP/ram-release.jks" --ks-key-alias "$RAM_BUSINESS_KEY_ALIAS" --ks-pass env:RAM_BUSINESS_KEYSTORE_PASSWORD --key-pass env:RAM_BUSINESS_KEY_PASSWORD --out "$OUTPUT_APK" "$INPUT_APK"
           "$APKSIGNER" verify --verbose "$OUTPUT_APK"
 
       - name: Upload signed APK
