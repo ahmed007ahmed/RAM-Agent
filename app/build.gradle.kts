@@ -3,11 +3,11 @@ android {
  namespace = "com.ram.agent"
  compileSdk = 35
  defaultConfig {
-  applicationId = "com.ram.agent"
+  applicationId = "com.ram.agent.business"
   minSdk = 23
   targetSdk = 35
-  versionCode = 4
-  versionName = "1.3"
+  versionCode = 10
+  versionName = "1.9-business"
  }
 }
 dependencies { }
