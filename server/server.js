@@ -23,7 +23,7 @@ app.use((req,res,next)=>{
  if(!allowRequest())return res.status(429).json({error:"طلبات كثيرة خلال دقيقة؛ انتظر قليلًا."});
  next();
 });
-app.post('/capabilities',(req,res)=>res.json({chatConfigured:Boolean(process.env.OPENROUTER_API_KEY||process.env.GEMINI_API_KEY),chatProviders:[process.env.OPENROUTER_API_KEY?'OpenRouter':'',process.env.GEMINI_API_KEY?'Gemini fallback':''].filter(Boolean),searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,emailConnected:false,callsConnected:false,cloudJobsConnected:false,paymentsEnabled:false,paidAiAllowed:false}));
+app.post('/capabilities',(req,res)=>res.json({chatConfigured:Boolean(process.env.OPENROUTER_API_KEY||process.env.GEMINI_API_KEY),chatProviders:[process.env.OPENROUTER_API_KEY?'OpenRouter':'',process.env.GEMINI_API_KEY?'Gemini fallback':''].filter(Boolean),searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),emailConnected:false,callsConnected:false,cloudJobsConnected:false,paymentsEnabled:false,paidAiAllowed:false}));
 
 function getOpenRouterKey() {
   const key = process.env.OPENROUTER_API_KEY;
@@ -281,6 +281,7 @@ app.post("/tts", async (req, res) => {
   try {
     const text = String(req.body?.text || "").trim();
     if (!text) return res.status(400).json({ error: "النص فارغ" });
+    if (text.length > 1200) return res.status(400).json({ error: "الحد الأقصى لصوت ElevenLabs هو 1200 حرف للطلب الواحد" });
 
     if(process.env.ALLOW_PAID_TTS!=="true")return res.status(503).json({error:"الصوت السحابي المدفوع معطّل؛ استخدم صوت الهاتف المجاني."});
     const apiKey = process.env.ELEVENLABS_API_KEY;
