@@ -26,9 +26,9 @@ jobs:
 
       - name: Restore signing keystore
         env:
-          RAM_BUSINESS_KEYSTORE_BASE64: ${{ secrets.RAM_BUSINESS_KEYSTORE_BASE64 }}
-          RAM_BUSINESS_KEYSTORE_PASSWORD: ${{ secrets.RAM_BUSINESS_KEYSTORE_PASSWORD }}
-          RAM_BUSINESS_KEY_ALIAS: ${{ secrets.RAM_BUSINESS_KEY_ALIAS }}
+          RAM_BUSINESS_KEYSTORE_BASE64: ${{ secrets.RAM_KEYSTORE_BASE64 }}
+          RAM_BUSINESS_KEYSTORE_PASSWORD: ${{ secrets.RAM_KEYSTORE_PASSWORD }}
+          RAM_BUSINESS_KEY_ALIAS: ${{ secrets.RAM_KEY_ALIAS }}
         run: |
           printf '%s' "$RAM_BUSINESS_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/ram-release.jks"
           test -s "$RUNNER_TEMP/ram-release.jks"
@@ -39,9 +39,9 @@ jobs:
 
       - name: Sign APK with permanent RAM key
         env:
-          RAM_BUSINESS_KEY_ALIAS: ${{ secrets.RAM_BUSINESS_KEY_ALIAS }}
-          RAM_BUSINESS_KEYSTORE_PASSWORD: ${{ secrets.RAM_BUSINESS_KEYSTORE_PASSWORD }}
-          RAM_BUSINESS_KEY_PASSWORD: ${{ secrets.RAM_BUSINESS_KEY_PASSWORD }}
+          RAM_BUSINESS_KEY_ALIAS: ${{ secrets.RAM_KEY_ALIAS }}
+          RAM_BUSINESS_KEYSTORE_PASSWORD: ${{ secrets.RAM_KEYSTORE_PASSWORD }}
+          RAM_BUSINESS_KEY_PASSWORD: ${{ secrets.RAM_KEY_PASSWORD }}
         run: |
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           INPUT_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
