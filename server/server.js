@@ -155,7 +155,8 @@ async function webSearch(query, maxResults = 8) {
     url: r.url || "",
     snippet: r.content || "",
     score: r.score ?? null, retrievedAt:new Date().toISOString()
-  })).filter(r=>{try{return ["https:","http:"].includes(new URL(r.url).protocol);}catch{return false;}});
+  })).filter(r=>{try{return ["https:","http:"].includes(new URL(r.url).protocol);}catch{return false;}})
+    .map(r=>({...r,...extractAdvertisedPay(`${r.title}\n${r.snippet}`)}));
   if(searchCache.size>=100)searchCache.delete(searchCache.keys().next().value);
   searchCache.set(cacheKey,{at:Date.now(),results});
   return results;
@@ -196,7 +197,7 @@ app.post("/search", async (req, res) => {
     const query = String(req.body?.query || req.body?.message || "").trim();
     if (!query||query.length>2000) return res.status(400).json({ error: "اكتب عبارة بحث بين 1 و2000 حرف" });
 
-    const results = await webSearch(query, req.body?.maxResults || 8);
+    const results = await webSearch(query, req.body?.maxResults || 10);
     let answer;
     try{answer=await summarizeSearch(query,results);}catch{answer=rawSearchReply(results);}
 
@@ -232,7 +233,7 @@ app.post("/chat", async (req, res) => {
     // Search automatically when the request clearly asks for current web discovery.
     if (searchIntent(message)) {
       if (!process.env.SERPER_API_KEY && !process.env.TAVILY_API_KEY) return res.status(503).json({error:"خدمة البحث غير مفعلة في الخادم. لم يتم البحث ولن تُعرض فرص وهمية."});
-      const results = await webSearch(message, 8);
+      const results = await webSearch(message, 10);
       let reply;
       try{reply=await summarizeSearch(message,results);}catch{reply=rawSearchReply(results);}
       return res.json({
