@@ -26,7 +26,11 @@ export function classifyFreelanceProject({title='',url='',snippet=''}={}) {
  const text=`${title}\n${url}\n${snippet}`;
  let host='';try{host=new URL(url).hostname.replace(/^www\./i,'');}catch{}
  const marketplace=freelanceMarketplaces.test(host);
- const employment=employmentSignals.test(text);
+ // Search snippets often describe an entire category (including salaried or
+ // full-time roles), even when the linked page is a genuine marketplace
+ // project. Only reject on explicit employment wording in the result title or
+ // URL; snippet text is noisy and should not erase a real project listing.
+ const employment=employmentSignals.test(`${title}\n${url}`);
  const project=freelanceSignals.test(text)||marketplace;
  const remote=remoteSignals.test(text)||marketplace;
  const eligible=!employment&&project&&remote;

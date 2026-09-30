@@ -249,14 +249,14 @@ app.post("/search", async (req, res) => {
 // Android app is offline. It only searches public listings; it never applies,
 // registers, messages clients, or handles money.
 const automationSearchCategories={
-  TRANSLATION:'remote freelance translation project fixed price budget Upwork ProZ Ureed -full-time -salary -vacancy',
-  ENGINEERING:'remote freelance CAD engineering interior design client project fixed price budget Upwork Freelancer -full-time -salary -vacancy',
-  TECH:'remote freelance web development programming client project fixed price budget Upwork Freelancer Guru -full-time -salary -vacancy',
-  RESEARCH:'remote freelance market research business consulting client project fixed price budget Upwork PeoplePerHour -full-time -salary -vacancy',
-  LOGISTICS:'remote freelance logistics freight shipping coordination project client commission contract -full-time -salary -vacancy',
-  ENERGY:'remote freelance oil gas market research procurement consulting project client commission contract -full-time -salary -vacancy',
-  SOURCING:'remote freelance supplier sourcing procurement buyer seller project client commission contract -full-time -salary -vacancy',
-  PROPERTY:'remote freelance real estate market research property writing project client fixed price budget -full-time -salary -vacancy'
+  TRANSLATION:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:proz.com OR site:mostaql.com/projects OR site:khamsat.com) freelance translation project',
+  ENGINEERING:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:guru.com/d/jobs) freelance CAD engineering interior design project',
+  TECH:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:guru.com/d/jobs OR site:peopleperhour.com/freelance-jobs) freelance web development programming project',
+  RESEARCH:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) freelance market research business consulting project',
+  LOGISTICS:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) freelance logistics freight shipping coordination project',
+  ENERGY:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) freelance oil gas procurement market research project',
+  SOURCING:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) freelance supplier sourcing procurement buyer project',
+  PROPERTY:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) freelance real estate tourism writing research project'
 };
 app.post('/automation/search',async(req,res)=>{
   if(!process.env.SERPER_API_KEY&&!process.env.TAVILY_API_KEY)return res.status(503).json({error:'البحث الحقيقي غير مفعّل. أضف SERPER_API_KEY أو TAVILY_API_KEY في Railway.'});
