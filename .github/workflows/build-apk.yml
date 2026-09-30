@@ -53,7 +53,7 @@ jobs:
         run: |
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           INPUT_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
-          OUTPUT_APK="app/build/outputs/apk/release/RAM-Business-v1.14.apk"
+          OUTPUT_APK="app/build/outputs/apk/release/RAM-Business-v1.15.apk"
           test -n "$APKSIGNER"
           test -f "$INPUT_APK"
           rm -f "$OUTPUT_APK"
@@ -74,5 +74,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: RAM-BUSINESS-SIGNED-APK
-          path: app/build/outputs/apk/release/RAM-Business-v1.14.apk
+          path: app/build/outputs/apk/release/RAM-Business-v1.15.apk
           if-no-files-found: error
