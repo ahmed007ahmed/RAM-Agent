@@ -22,7 +22,7 @@ const freelanceMarketplaces = /(?:^|\.)(?:upwork\.com|fiverr\.com|freelancer\.co
 const freelanceSignals = /\b(?:freelanc(?:e|er|ing)|fixed[ -]price|project[ -]based|client project|project budget|submit (?:a )?proposal|gig|independent contractor|paid project|commission[- ]based)\b|مشروع مستقل|عمل حر|عمل مستقل|ميزانية المشروع|سعر ثابت|عمولة معلنة/i;
 const remoteSignals = /\b(?:remote|work from home|work from anywhere|online project|fully remote|remote contract)\b|عن بعد|من المنزل|عمل إلكتروني|عبر الإنترنت/i;
 const employmentSignals = /\b(?:full[ -]?time|part[ -]?time|permanent employee|employee position|job vacancy|job opening|employment opportunity|career opportunity|monthly salary|onsite|on[ -]site|hybrid role|visa sponsorship|staff position)\b|وظيفة شاغرة|دوام كامل|دوام جزئي|راتب شهري|توظيف موظف|مقر الشركة/i;
-const sellerOfferSignals = /\b(?:hello[,! ]+)?(?:i can|we can) (?:help|support|design|create|provide|deliver)|\b(?:hire me|my services|my portfolio|services include|i offer|i am a freelancer|professional freelancer)\b|أستطيع مساعدتك|أقدم خدمات|خدماتي|مصمم مستقل|مستقل محترف/i;
+const sellerOfferSignals = /\b(?:hello[,! ]+)?(?:i can|we can) (?:help|support|design|create|provide|deliver|draw|draft|translate|build)|\b(?:hire me|my services|our services|my portfolio|services include|i offer|we offer|i am a freelancer|professional freelancer|available for freelance work)\b|أستطيع مساعدتك|أقدم خدمات|خدماتنا|خدماتي|مصمم مستقل|مستقل محترف/i;
 function isMarketplaceProjectUrl(url,host) {
  let path='';try{path=new URL(url).pathname.toLowerCase();}catch{return false;}
  if(/\/(?:u|user|users|profile|profiles|freelancer|freelancers|seller|sellers|service|services|gig|gigs|portfolio|hourlie)(?:\/|$)/i.test(path))return false;
