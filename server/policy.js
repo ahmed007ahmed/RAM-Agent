@@ -22,6 +22,20 @@ const freelanceMarketplaces = /(?:^|\.)(?:upwork\.com|fiverr\.com|freelancer\.co
 const freelanceSignals = /\b(?:freelanc(?:e|er|ing)|fixed[ -]price|project[ -]based|client project|project budget|submit (?:a )?proposal|gig|independent contractor|paid project|commission[- ]based)\b|مشروع مستقل|عمل حر|عمل مستقل|ميزانية المشروع|سعر ثابت|عمولة معلنة/i;
 const remoteSignals = /\b(?:remote|work from home|work from anywhere|online project|fully remote|remote contract)\b|عن بعد|من المنزل|عمل إلكتروني|عبر الإنترنت/i;
 const employmentSignals = /\b(?:full[ -]?time|part[ -]?time|permanent employee|employee position|job vacancy|job opening|employment opportunity|career opportunity|monthly salary|onsite|on[ -]site|hybrid role|visa sponsorship|staff position)\b|وظيفة شاغرة|دوام كامل|دوام جزئي|راتب شهري|توظيف موظف|مقر الشركة/i;
+const sellerOfferSignals = /\b(?:hello[,! ]+)?(?:i can|we can) (?:help|support|design|create|provide|deliver)|\b(?:hire me|my services|my portfolio|services include|i offer|i am a freelancer|professional freelancer)\b|أستطيع مساعدتك|أقدم خدمات|خدماتي|مصمم مستقل|مستقل محترف/i;
+function isMarketplaceProjectUrl(url,host) {
+ let path='';try{path=new URL(url).pathname.toLowerCase();}catch{return false;}
+ if(/\/(?:u|user|users|profile|profiles|freelancer|freelancers|seller|sellers|service|services|gig|gigs|portfolio|hourlie)(?:\/|$)/i.test(path))return false;
+ if(host==='upwork.com')return /\/freelance-jobs\/apply\/[^/]+|\/jobs\/~[^/]+/i.test(path);
+ if(host==='freelancer.com')return /\/projects\/[^/]+\/[^/]+/i.test(path);
+ if(host==='guru.com')return /\/d\/jobs\/[^/]+/i.test(path);
+ if(host==='peopleperhour.com')return /\/freelance-jobs\/[^/]+/i.test(path);
+ if(host==='proz.com')return /\/job\/\d+/i.test(path);
+ if(host==='mostaql.com')return /\/project\/[^/]+/i.test(path);
+ if(host==='khamsat.com')return /\/community\/requests\/[^/]+/i.test(path);
+ if(host==='truelancer.com')return /\/freelance-projects\/[^/]+/i.test(path);
+ return false;
+}
 export function classifyFreelanceProject({title='',url='',snippet=''}={}) {
  const text=`${title}\n${url}\n${snippet}`;
  let host='';try{host=new URL(url).hostname.replace(/^www\./i,'');}catch{}
@@ -31,10 +45,12 @@ export function classifyFreelanceProject({title='',url='',snippet=''}={}) {
  // project. Only reject on explicit employment wording in the result title or
  // URL; snippet text is noisy and should not erase a real project listing.
  const employment=employmentSignals.test(`${title}\n${url}`);
- const project=freelanceSignals.test(text)||marketplace;
- const remote=remoteSignals.test(text)||marketplace;
- const eligible=!employment&&project&&remote;
- return {eligible,workType:eligible?'REMOTE_FREELANCE_PROJECT':null,remoteEvidence:marketplace?'منصة عمل حر':remoteSignals.test(text)?'مذكور عن بُعد في الإعلان':null,rejectionReason:eligible?null:employment?'إعلان توظيف أو وظيفة تقليدية':!project?'لم يظهر أنه مشروع مستقل أو عمل حر':!remote?'لم يتضح أن العمل عن بُعد':null};
+ const marketplaceProject=marketplace&&isMarketplaceProjectUrl(url,host);
+ const sellerOffer=sellerOfferSignals.test(text);
+ const project=freelanceSignals.test(text)||marketplaceProject;
+ const remote=remoteSignals.test(text)||marketplaceProject;
+ const eligible=!employment&&!sellerOffer&&project&&remote;
+ return {eligible,workType:eligible?'REMOTE_FREELANCE_PROJECT':null,remoteEvidence:marketplaceProject?'صفحة مشروع في منصة عمل حر':remoteSignals.test(text)?'مذكور عن بُعد في الإعلان':null,rejectionReason:eligible?null:employment?'إعلان توظيف أو وظيفة تقليدية':sellerOffer?'عرض خدمة من مستقل وليس طلب مشروع من عميل':marketplace&&!marketplaceProject?'ليست صفحة مشروع منشور على منصة عمل حر':!project?'لم يظهر أنه مشروع مستقل أو عمل حر':!remote?'لم يتضح أن العمل عن بُعد':null};
 }
 // Burst protection only; monthly billing limits belong at the provider.
 export function createLimiter(limit=10,windowMs=60000){let start=0,count=0;return(now=Date.now())=>{if(now-start>=windowMs){start=now;count=0;}return ++count<=limit;};}
