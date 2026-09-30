@@ -9,9 +9,9 @@ jobs:
     steps:
       - name: Restore signing keystore
         env:
-          RAM_KEYSTORE_BASE64: ${{ secrets.RAM_KEYSTORE_BASE64 }}
+          RAM_BUSINESS_KEYSTORE_BASE64: ${{ secrets.RAM_BUSINESS_KEYSTORE_BASE64 }}
         run: |
-          printf '%s' "$RAM_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/ram-release.jks"
+          printf '%s' "$RAM_BUSINESS_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/ram-release.jks"
           if [ ! -s "$RUNNER_TEMP/ram-release.jks" ]; then
             echo "ERROR_STAGE=BASE64_OR_EMPTY_KEYSTORE"
             exit 1
@@ -20,9 +20,9 @@ jobs:
 
       - name: Check keystore password
         env:
-          RAM_KEYSTORE_PASSWORD: ${{ secrets.RAM_KEYSTORE_PASSWORD }}
+          RAM_BUSINESS_KEYSTORE_PASSWORD: ${{ secrets.RAM_BUSINESS_KEYSTORE_PASSWORD }}
         run: |
-          if keytool -list -keystore "$RUNNER_TEMP/ram-release.jks" -storepass "$RAM_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+          if keytool -list -keystore "$RUNNER_TEMP/ram-release.jks" -storepass "$RAM_BUSINESS_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
             echo "KEYSTORE_PASSWORD=OK"
           else
             echo "ERROR_STAGE=KEYSTORE_PASSWORD"
@@ -31,10 +31,10 @@ jobs:
 
       - name: Check alias
         env:
-          RAM_KEYSTORE_PASSWORD: ${{ secrets.RAM_KEYSTORE_PASSWORD }}
-          RAM_KEY_ALIAS: ${{ secrets.RAM_KEY_ALIAS }}
+          RAM_BUSINESS_KEYSTORE_PASSWORD: ${{ secrets.RAM_BUSINESS_KEYSTORE_PASSWORD }}
+          RAM_BUSINESS_KEY_ALIAS: ${{ secrets.RAM_BUSINESS_KEY_ALIAS }}
         run: |
-          if keytool -list -keystore "$RUNNER_TEMP/ram-release.jks" -storepass "$RAM_KEYSTORE_PASSWORD" -alias "$RAM_KEY_ALIAS" >/dev/null 2>&1; then
+          if keytool -list -keystore "$RUNNER_TEMP/ram-release.jks" -storepass "$RAM_BUSINESS_KEYSTORE_PASSWORD" -alias "$RAM_BUSINESS_KEY_ALIAS" >/dev/null 2>&1; then
             echo "KEY_ALIAS=OK"
           else
             echo "ERROR_STAGE=KEY_ALIAS"
