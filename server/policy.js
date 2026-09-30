@@ -23,6 +23,7 @@ const freelanceSignals = /\b(?:freelanc(?:e|er|ing)|fixed[ -]price|project[ -]ba
 const remoteSignals = /\b(?:remote|work from home|work from anywhere|online project|fully remote|remote contract)\b|عن بعد|من المنزل|عمل إلكتروني|عبر الإنترنت/i;
 const employmentSignals = /\b(?:full[ -]?time|part[ -]?time|permanent employee|employee position|job vacancy|job opening|employment opportunity|career opportunity|monthly salary|onsite|on[ -]site|hybrid role|visa sponsorship|staff position)\b|وظيفة شاغرة|دوام كامل|دوام جزئي|راتب شهري|توظيف موظف|مقر الشركة/i;
 const sellerOfferSignals = /\b(?:hello[,! ]+)?(?:i can|we can) (?:help|support|design|create|provide|deliver|draw|draft|translate|build)|\b(?:hire me|my services|our services|my portfolio|services include|i offer|we offer|i am a freelancer|professional freelancer|available for freelance work)\b|أستطيع مساعدتك|أقدم خدمات|خدماتنا|خدماتي|مصمم مستقل|مستقل محترف/i;
+const genericListingSignals = /\b(?:browse\s+[\d,]+\s+(?:open\s+)?jobs|open jobs and land|jobs today|freelance jobs\s*:\s*work remote|earn online|job listings|remote jobs|freelance jobs)\b|تصفح\s+(?:الوظائف|الفرص)|قائمة\s+وظائف/i;
 function isMarketplaceProjectUrl(url,host) {
  let path='';try{path=new URL(url).pathname.toLowerCase();}catch{return false;}
  if(/\/(?:u|user|users|profile|profiles|freelancer|freelancers|seller|sellers|service|services|gig|gigs|portfolio|hourlie)(?:\/|$)/i.test(path))return false;
@@ -46,11 +47,12 @@ export function classifyFreelanceProject({title='',url='',snippet=''}={}) {
  // URL; snippet text is noisy and should not erase a real project listing.
  const employment=employmentSignals.test(`${title}\n${url}`);
  const marketplaceProject=marketplace&&isMarketplaceProjectUrl(url,host);
+ const genericListing=!marketplaceProject&&genericListingSignals.test(`${title}\n${snippet}`);
  const sellerOffer=sellerOfferSignals.test(text);
  const project=freelanceSignals.test(text)||marketplaceProject;
  const remote=remoteSignals.test(text)||marketplaceProject;
- const eligible=!employment&&!sellerOffer&&project&&remote;
- return {eligible,workType:eligible?'REMOTE_FREELANCE_PROJECT':null,remoteEvidence:marketplaceProject?'صفحة مشروع في منصة عمل حر':remoteSignals.test(text)?'مذكور عن بُعد في الإعلان':null,rejectionReason:eligible?null:employment?'إعلان توظيف أو وظيفة تقليدية':sellerOffer?'عرض خدمة من مستقل وليس طلب مشروع من عميل':marketplace&&!marketplaceProject?'ليست صفحة مشروع منشور على منصة عمل حر':!project?'لم يظهر أنه مشروع مستقل أو عمل حر':!remote?'لم يتضح أن العمل عن بُعد':null};
+ const eligible=!employment&&!sellerOffer&&!genericListing&&project&&remote;
+ return {eligible,workType:eligible?'REMOTE_FREELANCE_PROJECT':null,remoteEvidence:marketplaceProject?'صفحة مشروع في منصة عمل حر':remoteSignals.test(text)?'مذكور عن بُعد في الإعلان':null,rejectionReason:eligible?null:employment?'إعلان توظيف أو وظيفة تقليدية':sellerOffer?'عرض خدمة من مستقل وليس طلب مشروع من عميل':genericListing?'صفحة تجميع وظائف وليست إعلان مشروع محدد':marketplace&&!marketplaceProject?'ليست صفحة مشروع منشور على منصة عمل حر':!project?'لم يظهر أنه مشروع مستقل أو عمل حر':!remote?'لم يتضح أن العمل عن بُعد':null};
 }
 // Burst protection only; monthly billing limits belong at the provider.
 export function createLimiter(limit=10,windowMs=60000){let start=0,count=0;return(now=Date.now())=>{if(now-start>=windowMs){start=now;count=0;}return ++count<=limit;};}
