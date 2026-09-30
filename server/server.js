@@ -1,5 +1,5 @@
 import express from "express";
-import {validToken, maxOutputTokens, checkedModel, rawSearchReply, createLimiter, extractAdvertisedPay} from "./policy.js";
+import {validToken, maxOutputTokens, checkedModel, rawSearchReply, createLimiter, extractAdvertisedPay, classifyFreelanceProject} from "./policy.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -23,7 +23,7 @@ app.use((req,res,next)=>{
  if(!allowRequest())return res.status(429).json({error:"طلبات كثيرة خلال دقيقة؛ انتظر قليلًا."});
  next();
 });
-app.post('/capabilities',(req,res)=>res.json({chatConfigured:Boolean(process.env.OPENROUTER_API_KEY||process.env.GEMINI_API_KEY),chatProviders:[process.env.OPENROUTER_API_KEY?'OpenRouter':'',process.env.GEMINI_API_KEY?'Gemini fallback':''].filter(Boolean),searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),emailConnected:false,callsConnected:false,cloudJobsConnected:false,paymentsEnabled:false,paidAiAllowed:false}));
+app.post('/capabilities',(req,res)=>res.json({chatConfigured:Boolean((process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')||process.env.OPENROUTER_API_KEY||(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')),chatProviders:[(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')?'OpenAI API':'',process.env.OPENROUTER_API_KEY?'OpenRouter':'',(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')?'Gemini fallback':''].filter(Boolean),openAIConfigured:Boolean(process.env.OPENAI_API_KEY),openAIEnabled:process.env.ALLOW_OPENAI_API==='true',searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,makeSchedulerSupported:true,elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),emailConnected:false,callsConnected:false,cloudJobsConnected:false,paymentsEnabled:false,paidAiAllowed:false}));
 
 function getOpenRouterKey() {
   const key = process.env.OPENROUTER_API_KEY;
@@ -64,8 +64,8 @@ async function openRouter(messages, options = {}) {
   return { reply, model: data?.model || process.env.OPENROUTER_MODEL || "openrouter/free" };
 }
 
-// Free-tier Gemini fallback for OpenRouter throttling/outages. Paid Gemini
-// models are deliberately not selected automatically.
+// Gemini fallback is opt-in because the provider may bill usage. Set
+// ALLOW_GEMINI_API=true only after checking the account's current plan.
 async function gemini(messages, options = {}) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw Object.assign(new Error("Gemini is not configured"), {code:"GEMINI_NOT_CONFIGURED"});
@@ -98,10 +98,29 @@ async function gemini(messages, options = {}) {
   return {reply,model};
 }
 
+async function openAIResponses(messages, options = {}) {
+  const apiKey=process.env.OPENAI_API_KEY;
+  if(!apiKey||process.env.ALLOW_OPENAI_API!=='true')throw Object.assign(new Error('OpenAI API is not enabled'),{code:'OPENAI_NOT_ENABLED'});
+  const system=messages.find(x=>x.role==='system')?.content||'';
+  const input=messages.filter(x=>x.role!=='system').map(x=>({role:x.role,content:x.content}));
+  const response=await fetch('https://api.openai.com/v1/responses',{
+    signal:AbortSignal.timeout(40000),method:'POST',
+    headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},
+    body:JSON.stringify({model:process.env.OPENAI_MODEL||'gpt-5.4-mini',instructions:system,input,max_output_tokens:maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),store:false})
+  });
+  const data=await response.json();
+  if(!response.ok){const error=new Error('OpenAI Responses API request failed');error.status=response.status;error.provider='OpenAI API';throw error;}
+  const reply=(data.output||[]).filter(item=>item.type==='message').flatMap(item=>item.content||[]).filter(item=>item.type==='output_text').map(item=>item.text||'').join('\n').trim();
+  if(!reply)throw Object.assign(new Error('OpenAI returned an empty response'),{status:503,provider:'OpenAI API'});
+  return {reply,model:data.model||process.env.OPENAI_MODEL||'gpt-5.4-mini',provider:'OpenAI API'};
+}
+
 async function answerWithFallback(messages, options = {}) {
+  if(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')return openAIResponses(messages,options);
   try { return {...await openRouter(messages,options),provider:"OpenRouter"}; }
   catch (primaryError) {
-    if (process.env.GEMINI_API_KEY && (primaryError.status===429 || primaryError.status>=500 || primaryError.status===401 || primaryError.status===403)) {
+    const geminiOptedIn=Boolean(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==="true");
+    if (geminiOptedIn && (!process.env.OPENROUTER_API_KEY || primaryError.status===429 || primaryError.status>=500 || primaryError.status===401 || primaryError.status===403)) {
       try { return {...await gemini(messages,options),provider:"Gemini free tier"}; }
       catch (fallbackError) {
         console.error("RAM model providers unavailable:",primaryError.status||"error",fallbackError.status||"error");
@@ -167,7 +186,7 @@ function searchIntent(message) {
 }
 
 async function summarizeSearch(query, results) {
-  if (!results.length) return "لم أعثر على نتائج ويب مناسبة لهذا البحث.";
+  if (!results.length) return "لم أعثر على مشروع مستقل مدفوع عن بُعد يطابق هذا القسم. استُبعدت إعلانات الوظائف والتوظيف التقليدي؛ جرّب كلمات تخصصية أبسط.";
 
   const evidence = results.map(r =>
     `[${r.id}] ${r.title}\nURL: ${r.url}\n${r.snippet}`
@@ -176,9 +195,10 @@ async function summarizeSearch(query, results) {
   const { reply } = await answerWithFallback([
     {
       role: "system",
-      content: `أنت RAM. أمامك نتائج بحث حقيقية من الويب.
+      content: `أنت RAM. أمامك نتائج بحث حقيقية من الويب لمشاريع عمل حر عن بُعد.
 أجب بالعربية باختصار ووضوح.
 اعتمد فقط على النتائج المعطاة ولا تخترع شركات أو أسعاراً أو روابط.
+لا تعرض وظيفة دوام أو إعلان توظيف على أنه مشروع مستقل. المبلغ لا يعد معلنًا إلا إذا ظهر بوضوح في بيانات النتيجة.
 عند ذكر معلومة من نتيجة، ضع رقم المصدر مثل [1].
 في النهاية أضف عنوان "المصادر" ثم روابط النتائج الأكثر صلة.
 إذا كانت النتائج لا تثبت معلومة، قل ذلك.`
@@ -197,7 +217,9 @@ app.post("/search", async (req, res) => {
     const query = String(req.body?.query || req.body?.message || "").trim();
     if (!query||query.length>2000) return res.status(400).json({ error: "اكتب عبارة بحث بين 1 و2000 حرف" });
 
-    const results = await webSearch(query, req.body?.maxResults || 10);
+    const rawResults = await webSearch(query, req.body?.maxResults || 10);
+    const classified=rawResults.map(r=>({...r,...classifyFreelanceProject(r)}));
+    const results=classified.filter(r=>r.eligible);
     let answer;
     try{answer=await summarizeSearch(query,results);}catch{answer=rawSearchReply(results);}
 
@@ -208,7 +230,9 @@ app.post("/search", async (req, res) => {
       answer,
       reply: answer,
       response: answer,
-      results
+      results,
+      excludedCount:classified.length-results.length,
+      resultType:"REMOTE_FREELANCE_PROJECT"
     });
   } catch (error) {
     console.error("RAM search error:", error.status || "unknown");
@@ -219,6 +243,37 @@ app.post("/search", async (req, res) => {
         : "تعذر تنفيذ البحث الحقيقي الآن"
     });
   }
+});
+
+// Scheduled Make.com scenarios can call this authenticated endpoint while the
+// Android app is offline. It only searches public listings; it never applies,
+// registers, messages clients, or handles money.
+const automationSearchCategories={
+  TRANSLATION:'remote freelance translation project fixed price budget Upwork ProZ Ureed -full-time -salary -vacancy',
+  ENGINEERING:'remote freelance CAD engineering interior design client project fixed price budget Upwork Freelancer -full-time -salary -vacancy',
+  TECH:'remote freelance web development programming client project fixed price budget Upwork Freelancer Guru -full-time -salary -vacancy',
+  RESEARCH:'remote freelance market research business consulting client project fixed price budget Upwork PeoplePerHour -full-time -salary -vacancy',
+  LOGISTICS:'remote freelance logistics freight shipping coordination project client commission contract -full-time -salary -vacancy',
+  ENERGY:'remote freelance oil gas market research procurement consulting project client commission contract -full-time -salary -vacancy',
+  SOURCING:'remote freelance supplier sourcing procurement buyer seller project client commission contract -full-time -salary -vacancy',
+  PROPERTY:'remote freelance real estate market research property writing project client fixed price budget -full-time -salary -vacancy'
+};
+app.post('/automation/search',async(req,res)=>{
+  if(!process.env.SERPER_API_KEY&&!process.env.TAVILY_API_KEY)return res.status(503).json({error:'البحث الحقيقي غير مفعّل. أضف SERPER_API_KEY أو TAVILY_API_KEY في Railway.'});
+  const requested=Array.isArray(req.body?.categories)?req.body.categories: Object.keys(automationSearchCategories);
+  const categories=[...new Set(requested.filter(code=>Object.hasOwn(automationSearchCategories,code)))].slice(0,8);
+  if(!categories.length)return res.status(400).json({error:'اختر قسمًا واحدًا على الأقل من الأقسام المعروفة'});
+  const extra=String(req.body?.query||'').trim().slice(0,300);
+  const limit=Math.min(Math.max(Number(req.body?.maxResults)||5,1),10);
+  const results=[],failures=[];
+  for(const category of categories){
+    const query=[automationSearchCategories[category],extra].filter(Boolean).join(' ');
+    try{const found=await webSearch(query,limit);results.push(...found.map(r=>({...r,...classifyFreelanceProject(r),category,query})).filter(r=>r.eligible));}
+    catch(error){failures.push({category,error:error.code==='SEARCH_NOT_CONFIGURED'?'خدمة البحث غير مهيأة':`تعذر البحث لدى مزود الخدمة (${error.status||'اتصال'})`});}
+  }
+  const unique=[...new Map(results.map(item=>[item.url,item])).values()];
+  const counts=Object.fromEntries(categories.map(code=>[code,unique.filter(item=>item.category===code).length]));
+  return res.json({ok:failures.length===0,realSearch:true,resultType:'REMOTE_FREELANCE_PROJECT',generatedAt:new Date().toISOString(),results:unique,counts,failures});
 });
 
 app.post("/chat", async (req, res) => {
@@ -252,6 +307,7 @@ app.post("/chat", async (req, res) => {
 لا تكرر قوائم الخدمات أو كلام المستخدم بلا داع.
 إذا كان الطلب واضحاً فابدأ أقرب خطوة قابلة للتنفيذ.
 ساعد في البرمجة والتصميم والترجمة والبحث والأعمال الهندسية والشحن واللوجستيات والعقارات والتجارة.
+ملف إنجاز القابضة المحلي: شركة خدمات وتنسيق أعمال متعددة المجالات، وتاريخ العمل منذ 2020 معلومة قدمها مالكها. المجالات: الهندسة ومخططات المساحة والديكور والتصميم؛ المواقع والبرمجة؛ الاستشارات والأبحاث ودراسات المشاريع التجارية وتطوير المشاريع الاستثمارية؛ الترجمة؛ تنسيق الشحن؛ والوساطة في التوريد والاستفسارات التجارية للطاقة وفق الأنظمة. لا توجد في البيانات الحالية شهادات تسجيل أو مراجع عملاء أو نماذج أعمال موثقة؛ لا تخترعها. إذا طلب المالك ردًا على استفسار شركة، جهّز مسودة مهنية من هذه المعلومات واطلب مراجعته؛ لا تدّع إرسالها.
 لا تخترع نتائج بحث أو أسماء أو أسعاراً أو روابط.
 لا تدّع أنك اتصلت أو أرسلت أو نفذت معاملة إلا إذا أعادت أداة التنفيذ نتيجة نجاح.
 لا تنفذ أي إرسال أو تحويل أو سحب أموال من حسابات المستخدم.
@@ -271,7 +327,7 @@ app.post("/chat", async (req, res) => {
     console.error("RAM chat error:", error.provider || "AI", error.status || "unknown");
     const message=error.status===429
       ? "وصلت خدمة الذكاء الاصطناعي إلى حد الطلبات المجانية مؤقتًا. انتظر قليلًا ثم أعد المحاولة؛ لم يتم احتساب العمل كمنجز."
-      : error.provider==="AI" ? error.message : "تعذر الحصول على رد من RAM الآن؛ تحقّق من إعداد مزود الذكاء الاصطناعي.";
+      : error.provider==="AI" ? error.message : error.provider ? `تعذر الحصول على رد من ${error.provider}؛ تحقّق من المفتاح والحصة وإعداد النموذج.` : "تعذر الحصول على رد من RAM الآن؛ تحقّق من إعداد مزود الذكاء الاصطناعي.";
     return res.status(error.status || 500).json({
       error: message
     });

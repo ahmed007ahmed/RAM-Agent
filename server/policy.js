@@ -14,6 +14,24 @@ export function rawSearchReply(results) {
  if(!results.length)return 'لم يُرجع محرك البحث نتائج لهذا الطلب.';
  return 'هذه نتائج بحث فعلية؛ تعذر تلخيصها بالنموذج الآن. تحقّق من صلاحية الإعلان والميزانية في المصدر قبل اختيار العمل.\n\n'+results.map((r,i)=>`${i+1}. ${r.title}\n${r.snippet}\n${r.url}`).join('\n\n');
 }
+
+// Keep ordinary vacancies out of RAM's paid, remote freelance project feed.
+// We only accept clear project/freelance wording or a known freelance
+// marketplace URL, and reject employee-style positions even if they say remote.
+const freelanceMarketplaces = /(?:^|\.)(?:upwork\.com|fiverr\.com|freelancer\.com|guru\.com|peopleperhour\.com|toptal\.com|ureed\.com|mostaql\.com|khamsat\.com|truelancer\.com)$/i;
+const freelanceSignals = /\b(?:freelanc(?:e|er|ing)|fixed[ -]price|project[ -]based|client project|project budget|submit (?:a )?proposal|gig|independent contractor|paid project|commission[- ]based)\b|مشروع مستقل|عمل حر|عمل مستقل|ميزانية المشروع|سعر ثابت|عمولة معلنة/i;
+const remoteSignals = /\b(?:remote|work from home|work from anywhere|online project|fully remote|remote contract)\b|عن بعد|من المنزل|عمل إلكتروني|عبر الإنترنت/i;
+const employmentSignals = /\b(?:full[ -]?time|part[ -]?time|permanent employee|employee position|job vacancy|job opening|employment opportunity|career opportunity|monthly salary|onsite|on[ -]site|hybrid role|visa sponsorship|staff position)\b|وظيفة شاغرة|دوام كامل|دوام جزئي|راتب شهري|توظيف موظف|مقر الشركة/i;
+export function classifyFreelanceProject({title='',url='',snippet=''}={}) {
+ const text=`${title}\n${url}\n${snippet}`;
+ let host='';try{host=new URL(url).hostname.replace(/^www\./i,'');}catch{}
+ const marketplace=freelanceMarketplaces.test(host);
+ const employment=employmentSignals.test(text);
+ const project=freelanceSignals.test(text)||marketplace;
+ const remote=remoteSignals.test(text)||marketplace;
+ const eligible=!employment&&project&&remote;
+ return {eligible,workType:eligible?'REMOTE_FREELANCE_PROJECT':null,remoteEvidence:marketplace?'منصة عمل حر':remoteSignals.test(text)?'مذكور عن بُعد في الإعلان':null,rejectionReason:eligible?null:employment?'إعلان توظيف أو وظيفة تقليدية':!project?'لم يظهر أنه مشروع مستقل أو عمل حر':!remote?'لم يتضح أن العمل عن بُعد':null};
+}
 // Burst protection only; monthly billing limits belong at the provider.
 export function createLimiter(limit=10,windowMs=60000){let start=0,count=0;return(now=Date.now())=>{if(now-start>=windowMs){start=now;count=0;}return ++count<=limit;};}
 
