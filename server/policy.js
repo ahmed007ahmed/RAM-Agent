@@ -18,7 +18,7 @@ export function rawSearchReply(results) {
 // Keep ordinary vacancies out of RAM's paid, remote freelance project feed.
 // We only accept clear project/freelance wording or a known freelance
 // marketplace URL, and reject employee-style positions even if they say remote.
-const freelanceMarketplaces = /(?:^|\.)(?:upwork\.com|fiverr\.com|freelancer\.com|guru\.com|peopleperhour\.com|toptal\.com|ureed\.com|mostaql\.com|khamsat\.com|truelancer\.com)$/i;
+const freelanceMarketplaces = /(?:^|\.)(?:upwork\.com|fiverr\.com|freelancer\.com|guru\.com|peopleperhour\.com|proz\.com|toptal\.com|ureed\.com|mostaql\.com|khamsat\.com|truelancer\.com)$/i;
 const freelanceSignals = /\b(?:freelanc(?:e|er|ing)|fixed[ -]price|project[ -]based|client project|project budget|submit (?:a )?proposal|gig|independent contractor|paid project|commission[- ]based)\b|مشروع مستقل|عمل حر|عمل مستقل|ميزانية المشروع|سعر ثابت|عمولة معلنة/i;
 const remoteSignals = /\b(?:remote|work from home|work from anywhere|online project|fully remote|remote contract)\b|عن بعد|من المنزل|عمل إلكتروني|عبر الإنترنت/i;
 const employmentSignals = /\b(?:full[ -]?time|part[ -]?time|permanent employee|employee position|job vacancy|job opening|employment opportunity|career opportunity|monthly salary|onsite|on[ -]site|hybrid role|visa sponsorship|staff position)\b|وظيفة شاغرة|دوام كامل|دوام جزئي|راتب شهري|توظيف موظف|مقر الشركة/i;
