@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validToken,checkedModel,maxOutputTokens,rawSearchReply,createLimiter,classifyFreelanceProject} from '../server/policy.js';
+import {validToken,checkedModel,openRouterModels,maxOutputTokens,rawSearchReply,createLimiter,classifyFreelanceProject} from '../server/policy.js';
 test('missing, short or wrong connection tokens are rejected',()=>{
  const key='test-token-that-is-long-enough';
  assert.equal(validToken('Bearer '+key,key),true);
@@ -12,6 +12,10 @@ test('paid AI cannot activate accidentally',()=>{
  assert.throws(()=>checkedModel({OPENROUTER_MODEL:'paid/model',ALLOW_PAID_AI:'true'}));
  assert.equal(checkedModel({OPENROUTER_MODEL:'paid/model',ALLOW_PAID_AI:'true',RAM_API_TOKEN:'test-token-that-is-long-enough'}),'paid/model');
  assert.equal(maxOutputTokens('9999999'),2048);assert.equal(maxOutputTokens('invalid'),1024);
+});
+test('OpenRouter tries configured model then free fallbacks only',()=>{
+ assert.deepEqual(openRouterModels({OPENROUTER_MODEL:'qwen/qwen3.8-27b:free'}),['qwen/qwen3.8-27b:free','openrouter/free']);
+ assert.deepEqual(openRouterModels({OPENROUTER_MODEL:'qwen/qwen3.8-27b:free',OPENROUTER_FALLBACK_MODELS:'paid/model,google/gemma-4-26b-a4b-it:free'}),['qwen/qwen3.8-27b:free','google/gemma-4-26b-a4b-it:free']);
 });
 test('source results survive model failure without invented amounts',()=>{
  const result=rawSearchReply([{title:'Actual result',url:'https://example.com/job',snippet:'Budget not listed'}]);
