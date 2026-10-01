@@ -10,7 +10,7 @@ function next(job,action,info={},now=Date.now()){
  if(action==='SELECTED'&&!info.approved)throw Error('يلزم تأكيد اختيار الفرصة');
  if(action==='IN_PROGRESS'&&!String(info.agreement||'').trim())throw Error('دوّن الاتفاق مع العميل ونطاق العمل أولًا');
  if(action==='DELIVERED'&&!String(info.proof||'').trim())throw Error('أدخل رابط التسليم أو مرجع رسالة التسليم');
- if(action==='PAYMENT_PENDING') {if(!info.dueAt||!Number.isFinite(Number(info.dueAt)))throw Error('حدد تاريخ الاستحقاق حسب الاتفاق');j.dueAt=Number(info.dueAt);}
+ if(action==='PAYMENT_PENDING') {if(!info.dueAt||!Number.isFinite(Number(info.dueAt)))throw Error('حدد تاريخ الاستحقاق حسب الاتفاق');if(!['BANK','WESTERN_UNION','MONEYGRAM','USDT'].includes(info.payoutMethod))throw Error('اختر وسيلة الاستلام المتفق عليها');j.dueAt=Number(info.dueAt);j.payoutMethod=info.payoutMethod;}
  if(action==='PAYMENT_REPORTED'&&!String(info.reference||'').trim())throw Error('دوّن مرجع إشعار التحويل دون اعتباره استلامًا');
  if(action==='IN_PROGRESS')j.agreement=String(info.agreement).trim();
  if(action==='RECEIVED'){
