@@ -12,6 +12,7 @@ function next(job,action,info={},now=Date.now()){
  if(action==='DELIVERED'&&!String(info.proof||'').trim())throw Error('أدخل رابط التسليم أو مرجع رسالة التسليم');
  if(action==='PAYMENT_PENDING') {if(!info.dueAt||!Number.isFinite(Number(info.dueAt)))throw Error('حدد تاريخ الاستحقاق حسب الاتفاق');j.dueAt=Number(info.dueAt);}
  if(action==='PAYMENT_REPORTED'&&!String(info.reference||'').trim())throw Error('دوّن مرجع إشعار التحويل دون اعتباره استلامًا');
+ if(action==='IN_PROGRESS')j.agreement=String(info.agreement).trim();
  if(action==='RECEIVED'){
   if(info.confirmedByOwner!==true)throw Error('تأكيد صاحب الحساب مطلوب');
   if(!['BANK','WESTERN_UNION','MONEYGRAM','USDT'].includes(info.method))throw Error('اختر وسيلة الاستلام');
