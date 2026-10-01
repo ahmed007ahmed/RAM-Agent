@@ -1,13 +1,48 @@
-# RAM Agent 1.15 — Android
+# RAM communication and AI quality update
 
-تطبيق عربي لإدارة فرص العمل المستقل وسجل الأعمال. يعرض فرصًا من نتائج ويب عامة بعد فلترة الوظائف التقليدية وصفحات تجميع الوظائف. افتح رابط المصدر الظاهر في كل بطاقة للتحقق من الشروط والرسوم والمبلغ. بعد اختيار فرصة، يبدأ رام تلقائيًا إعداد خطة ومسودة تقديم بالذكاء الاصطناعي ويضيف Injaz Holding (إنجاز القابضة) بصفة الجهة المقترحة. وبعد تسجيل نطاق متفق عليه، يبدأ إعداد مسودة أولية للمخرج.
+This update changes the server prompt and reply handling so RAM uses the recent conversation, answers in concise natural paragraphs, avoids repeated Markdown symbols and punctuation, and drafts project-specific outreach grounded in the project details supplied to it.
 
-## Gmail
+## Files
 
-يتضمن المصدر إعداد ربط Google OAuth، عرض مقتطفات صندوق الوارد، وإرسالًا يدويًا بعد التأكيد. قبل الاستخدام يلزم إعداد متغيرات Google وVolume دائم على Railway. الخطوات في [`docs/GMAIL-SETUP-AR.md`](docs/GMAIL-SETUP-AR.md). لا تضع أسرار Google في التطبيق أو GitHub.
+- `AIService.java` → `app/src/main/java/com/ram/agent/AIService.java`
+- `MainActivity.java` → `app/src/main/java/com/ram/agent/MainActivity.java`
+- `server.js` → `server/server.js`
+- `response-format.mjs` → `server/response-format.mjs`
 
-لا يقدم التطبيق عروضًا تلقائية ولا يقبل أو يوقّع عقودًا ملزمة؛ أدرج اسم الشركة في مسودة فقط، وتحتاج مراجعتك وتوقيعك. ولا يسجل حسابات. مسودات رام محفوظة محليًا ولا تُرسل أو تُسلّم تلقائيًا؛ راجع كل مخرج وأرسله بنفسك. لا يرسل بريدًا دون ضغط المستخدم على زر الإرسال. النموذج الاحتياطي المجاني في OpenRouter لا يتجاوز حدود حصة الحساب.
+Keep the two server files together in the `server` folder. The app already sends recent conversation messages to `/chat`; the server now uses them as context.
 
-## بناء APK عبر GitHub Actions
+## Required server settings
 
-Workflow **Build Signed APK** ينشئ artifact باسم `RAM-BUSINESS-SIGNED-APK` بعد الدفع إلى `main`. يتطلب مفاتيح توقيع Android التي سبق إعدادها في GitHub Actions. التطبيق الجديد يحتاج توقيع الإصدار نفسه كي يحدّث نسخة مثبتة بدل إنشاء توقيع مختلف.
+- `OPENROUTER_API_KEY`: server-side API key.
+- `OPENROUTER_MODEL`: a capable, non-free model available to this OpenRouter account, written as its provider/model identifier. The old `openrouter/free` fallback has been removed because its model can change and produce inconsistent results. RAM returns a configuration error until this is set.
+- `TAVILY_API_KEY`: needed for real web search.
+- `ELEVENLABS_API_KEY`: needed for spoken replies.
+
+Never place provider keys in Android source code or expose them in the app.
+
+## Project outreach
+
+RAM can draft a tailored application in chat when the conversation contains the actual project title, description and link. The server also provides `POST /proposal` with JSON such as:
+
+```json
+{
+  "language": "English",
+  "senderName": "Ahmed",
+  "company": "Enjaz Holding",
+  "project": {
+    "title": "Arabic-English article editing",
+    "description": "Edit and translate short articles for our website.",
+    "url": "https://example.com/project",
+    "budget": "Published budget, if any",
+    "verifiedSamples": "Only list samples that are actually available"
+  }
+}
+```
+
+The response contains a subject and message body marked `draftOnly: true`. This package does not connect Gmail or send email. No message is sent by generating a draft; an authenticated mail integration and recipient details must be configured before automatic sending can work.
+
+## Deploy and verify
+
+Replace the listed files in the existing `ahmed007ahmed/RAM-Agent` repository, set the server variables above in its deployment environment, then deploy that service. Verify the app is pointed at the correct server URL in Settings. Test `/chat`, `/search`, and `/proposal` after deployment.
+
+This workspace update is source code only. It has not been deployed to Railway or connected to a mailbox, and no client has been contacted. The existing Railway project and user credentials were not available here. Do not count a drafted message as an application or income.
