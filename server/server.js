@@ -360,14 +360,14 @@ app.post("/search", async (req, res) => {
 // Android app is offline. It only searches public listings; it never applies,
 // registers, messages clients, or handles money.
 const automationSearchCategories={
-  TRANSLATION:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:proz.com OR site:mostaql.com/projects OR site:khamsat.com) freelance translation project',
-  ENGINEERING:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:guru.com/d/jobs) freelance CAD engineering interior design project',
-  TECH:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:guru.com/d/jobs OR site:peopleperhour.com/freelance-jobs) freelance web development programming project',
-  RESEARCH:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) freelance market research business consulting project',
-  LOGISTICS:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) freelance logistics freight shipping coordination project',
-  ENERGY:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) freelance oil gas procurement market research project',
-  SOURCING:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) freelance supplier sourcing procurement buyer project',
-  PROPERTY:'(site:upwork.com/freelance-jobs OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) freelance real estate tourism writing research project'
+  TRANSLATION:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:proz.com/job OR site:mostaql.com/project OR site:khamsat.com/community/requests) translation project client budget',
+  ENGINEERING:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:guru.com/d/jobs) CAD engineering interior design project client budget',
+  TECH:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:guru.com/d/jobs OR site:peopleperhour.com/freelance-jobs) web development programming project client budget',
+  RESEARCH:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs OR site:mostaql.com/project) market research business consulting project client budget',
+  LOGISTICS:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) logistics freight shipping coordination project client budget',
+  ENERGY:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) oil gas procurement market research project client budget',
+  SOURCING:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs OR site:mostaql.com/project) supplier sourcing procurement buyer project client budget',
+  PROPERTY:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) real estate tourism project client budget'
 };
 app.post('/automation/search',async(req,res)=>{
   if(!process.env.SERPER_API_KEY&&!process.env.TAVILY_API_KEY)return res.status(503).json({error:'البحث الحقيقي غير مفعّل. أضف SERPER_API_KEY أو TAVILY_API_KEY في Railway.'});
