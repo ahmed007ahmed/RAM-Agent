@@ -1,5 +1,5 @@
 import express from "express";
-import {validToken, maxOutputTokens, openRouterModels, rawSearchReply, createLimiter, extractAdvertisedPay, classifyFreelanceProject} from "./policy.js";
+import {validToken, maxOutputTokens, openRouterModels, rawSearchReply, cleanConversationalReply, createLimiter, extractAdvertisedPay, classifyFreelanceProject} from "./policy.js";
 import {GMAIL_SCOPES, gmailConfigured, loadRefreshToken, makeOAuthState, makeRawEmail, safeMessage, saveRefreshToken, verifyOAuthState} from "./gmail.js";
 
 const app = express();
@@ -143,36 +143,29 @@ function getOpenRouterKey() {
 }
 
 async function openRouter(messages, options = {}) {
-  const response = await fetch(OPENROUTER_URL, {
-    signal: AbortSignal.timeout(40000),
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${getOpenRouterKey()}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": process.env.APP_URL || "https://ram-agent-production.up.railway.app",
-      "X-Title": "RAM Agent"
-    },
-    body: JSON.stringify({
-      models: openRouterModels(process.env),
-      max_tokens: maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
-      messages,
-      temperature: options.temperature ?? 0.35
-    })
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    const error = new Error("OpenRouter request failed");
-    error.status = response.status;
-    error.provider = "OpenRouter";
-    error.providerMessage = String(data?.error?.message || "").slice(0, 180);
-    throw error;
+  const models=openRouterModels(process.env);
+  let lastError;
+  for(const model of models){
+    try{
+      const response = await fetch(OPENROUTER_URL, {
+        signal: AbortSignal.timeout(30000), method: "POST",
+        headers: {
+          Authorization: `Bearer ${getOpenRouterKey()}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": process.env.APP_URL || "https://ram-agent-production.up.railway.app",
+          "X-Title": "RAM Agent"
+        },
+        body: JSON.stringify({model,max_tokens:maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),messages,temperature:options.temperature??0.55})
+      });
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok){const error=new Error("OpenRouter request failed");error.status=response.status;error.provider="OpenRouter";error.providerMessage=String(data?.error?.message||"").slice(0,180);throw error;}
+      const raw=data?.choices?.[0]?.message?.content;
+      const reply=cleanConversationalReply(typeof raw==='string'?raw:Array.isArray(raw)?raw.map(part=>part?.text||'').join('\n'):"");
+      if(!reply)throw Object.assign(new Error("Model returned no conversational text"),{status:503,provider:"OpenRouter"});
+      return {reply,model:data?.model||model,provider:"OpenRouter"};
+    }catch(error){lastError=error;console.error("RAM OpenRouter model unavailable:",model,error.status||error.name||"error");}
   }
-
-  const reply = data?.choices?.[0]?.message?.content?.trim();
-  if (/^\s*(?:User|Content) Safety:\s*(?:safe|unsafe)\s*$/i.test(reply || "")) throw Object.assign(new Error("Configured model returned a classification instead of a conversation"), {status:503});
-  if (!reply) throw new Error("OpenRouter returned an empty reply");
-  return { reply, model: data?.model || process.env.OPENROUTER_MODEL || "openrouter/free" };
+  throw Object.assign(new Error("تعذر الحصول على رد حواري من نماذج OpenRouter المجانية. قد تكون الحصة أو الخدمة متوقفة مؤقتًا؛ لم يُحتسب أي عمل منجز."),{status:lastError?.status===429?429:503,provider:"AI"});
 }
 
 // Gemini fallback is opt-in because the provider may bill usage. Set
@@ -204,7 +197,7 @@ async function gemini(messages, options = {}) {
     error.providerMessage = String(data?.error?.message || "").slice(0, 180);
     throw error;
   }
-  const reply = data?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("").trim();
+  const reply = cleanConversationalReply(data?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join(""));
   if (!reply) throw Object.assign(new Error("Gemini returned an empty reply"),{status:503,provider:"Gemini"});
   return {reply,model};
 }
@@ -221,7 +214,7 @@ async function openAIResponses(messages, options = {}) {
   });
   const data=await response.json();
   if(!response.ok){const error=new Error('OpenAI Responses API request failed');error.status=response.status;error.provider='OpenAI API';throw error;}
-  const reply=(data.output||[]).filter(item=>item.type==='message').flatMap(item=>item.content||[]).filter(item=>item.type==='output_text').map(item=>item.text||'').join('\n').trim();
+  const reply=cleanConversationalReply((data.output||[]).filter(item=>item.type==='message').flatMap(item=>item.content||[]).filter(item=>item.type==='output_text').map(item=>item.text||'').join('\n'));
   if(!reply)throw Object.assign(new Error('OpenAI returned an empty response'),{status:503,provider:'OpenAI API'});
   return {reply,model:data.model||process.env.OPENAI_MODEL||'gpt-5.4-mini',provider:'OpenAI API'};
 }
@@ -414,7 +407,8 @@ app.post("/chat", async (req, res) => {
       {
         role: "system",
         content: `أنت RAM (رام عشيش)، مساعد ذكاء اصطناعي شخصي ووكيل أعمال لأحمد عشيش.
-تحدث بصورة طبيعية وذكية وسريعة، وافهم المقصد من السياق.
+تحدث بالعربية الطبيعية بأسلوب ودود وواضح وحديث، كزميل أعمال يهتم بتفاصيل المهمة. افهم المقصود من سياق الرسائل السابقة، واذكر اسم العمل الجاري عند مناقشته. كن موجزًا حين يكفي الإيجاز، واشرح خطوات العمل عند الحاجة. لا تدّع مشاعر أو وعيًا بشريًا.
+لا تعرض أبدًا وسومًا داخلية مثل User Safety أو Response Safety أو تصنيفات safe/unsafe؛ أجب المستخدم مباشرة بلغة طبيعية.
 لا تكرر قوائم الخدمات أو كلام المستخدم بلا داع.
 إذا كان الطلب واضحاً فابدأ أقرب خطوة قابلة للتنفيذ.
 ساعد في البرمجة والتصميم والترجمة والبحث والأعمال الهندسية والشحن واللوجستيات والعقارات والتجارة.

@@ -22,6 +22,13 @@ export function rawSearchReply(results) {
  return 'هذه نتائج بحث فعلية؛ تعذر تلخيصها بالنموذج الآن. تحقّق من صلاحية الإعلان والميزانية في المصدر قبل اختيار العمل.\n\n'+results.map((r,i)=>`${i+1}. ${r.title}\n${r.snippet}\n${r.url}`).join('\n\n');
 }
 
+// Some gateway/model combinations accidentally expose moderation labels as if
+// they were the assistant's answer. Never show those internal labels to RAM users.
+export function cleanConversationalReply(value) {
+ const lines=String(value||'').split(/\r?\n/).filter(line=>!/^\s*(?:user|content|response)\s+safety\s*:\s*(?:safe|unsafe)\s*$/i.test(line));
+ return lines.join('\n').replace(/\n{3,}/g,'\n\n').trim();
+}
+
 // Keep ordinary vacancies out of RAM's paid, remote freelance project feed.
 // We only accept clear project/freelance wording or a known freelance
 // marketplace URL, and reject employee-style positions even if they say remote.
