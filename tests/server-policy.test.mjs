@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validToken,checkedModel,openRouterModels,maxOutputTokens,rawSearchReply,createLimiter,classifyFreelanceProject} from '../server/policy.js';
+import {validToken,checkedModel,openRouterModels,maxOutputTokens,rawSearchReply,cleanConversationalReply,createLimiter,classifyFreelanceProject} from '../server/policy.js';
 test('missing, short or wrong connection tokens are rejected',()=>{
  const key='test-token-that-is-long-enough';
  assert.equal(validToken('Bearer '+key,key),true);
@@ -20,6 +20,10 @@ test('OpenRouter tries configured model then free fallbacks only',()=>{
 test('source results survive model failure without invented amounts',()=>{
  const result=rawSearchReply([{title:'Actual result',url:'https://example.com/job',snippet:'Budget not listed'}]);
  assert.match(result,/https:\/\/example.com\/job/);assert.match(result,/Budget not listed/);assert.doesNotMatch(result,/\$/);
+});
+test('internal safety labels are removed while normal conversational text is preserved',()=>{
+ assert.equal(cleanConversationalReply('User Safety: safe\nResponse Safety: safe'),'');
+ assert.equal(cleanConversationalReply('أفهم المطلوب.\nUser Safety: safe\nسأبدأ بالخطوة الأولى.'),'أفهم المطلوب.\nسأبدأ بالخطوة الأولى.');
 });
 test('freelance feed accepts remote marketplace projects but excludes regular vacancies',()=>{
  const project=classifyFreelanceProject({title:'Arabic translation project — fixed price',url:'https://www.upwork.com/freelance-jobs/apply/arabic-translation_~01'});
