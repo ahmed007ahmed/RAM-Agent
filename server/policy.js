@@ -10,6 +10,13 @@ export function checkedModel(env) {
  if(!model.endsWith(':free')&&(env.ALLOW_PAID_AI!=='true'||!env.RAM_API_TOKEN||env.RAM_API_TOKEN.length<24))throw Object.assign(new Error('Paid AI disabled; configure authentication and provider spending limits first'),{status:503});
  return model;
 }
+// Try the configured model first, then another available free model if it is
+// throttled. Paid fallbacks are never added implicitly.
+export function openRouterModels(env) {
+ const primary=checkedModel(env);
+ const configured=(env.OPENROUTER_FALLBACK_MODELS||'openrouter/free').split(',').map(x=>x.trim()).filter(Boolean);
+ return [...new Set([primary,...configured.filter(x=>x==='openrouter/free'||x.endsWith(':free'))])].slice(0,4);
+}
 export function rawSearchReply(results) {
  if(!results.length)return 'لم يُرجع محرك البحث نتائج لهذا الطلب.';
  return 'هذه نتائج بحث فعلية؛ تعذر تلخيصها بالنموذج الآن. تحقّق من صلاحية الإعلان والميزانية في المصدر قبل اختيار العمل.\n\n'+results.map((r,i)=>`${i+1}. ${r.title}\n${r.snippet}\n${r.url}`).join('\n\n');

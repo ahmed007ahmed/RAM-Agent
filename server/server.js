@@ -1,5 +1,5 @@
 import express from "express";
-import {validToken, maxOutputTokens, checkedModel, rawSearchReply, createLimiter, extractAdvertisedPay, classifyFreelanceProject} from "./policy.js";
+import {validToken, maxOutputTokens, openRouterModels, rawSearchReply, createLimiter, extractAdvertisedPay, classifyFreelanceProject} from "./policy.js";
 import {GMAIL_SCOPES, gmailConfigured, loadRefreshToken, makeOAuthState, makeRawEmail, safeMessage, saveRefreshToken, verifyOAuthState} from "./gmail.js";
 
 const app = express();
@@ -153,7 +153,7 @@ async function openRouter(messages, options = {}) {
       "X-Title": "RAM Agent"
     },
     body: JSON.stringify({
-      model: checkedModel(process.env),
+      models: openRouterModels(process.env),
       max_tokens: maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
       messages,
       temperature: options.temperature ?? 0.35
