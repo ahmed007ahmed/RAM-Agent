@@ -22,6 +22,10 @@ test('freelance feed accepts remote marketplace projects but excludes regular va
  assert.equal(project.eligible,true);assert.equal(project.workType,'REMOTE_FREELANCE_PROJECT');
  const noisyMarketplaceSnippet=classifyFreelanceProject({title:'Arabic translation project — fixed price',url:'https://www.freelancer.com/projects/translation/arabic-translation',snippet:'Browse full-time jobs too. Typical monthly salary information is shown in this category.'});
  assert.equal(noisyMarketplaceSnippet.eligible,true,'irrelevant category text in the snippet must not hide an actual marketplace project');
+ const mostaqlProject=classifyFreelanceProject({title:'ترجمة ملفات من الإنجليزية إلى العربية',url:'https://mostaql.com/project/823022-translation',snippet:'مطلوب مترجم متخصص لترجمة ملفات'});
+ assert.equal(mostaqlProject.eligible,true,'Mostaql individual projects use singular /project/ URLs');
+ const prozProject=classifyFreelanceProject({title:'Arabic to English translation project',url:'https://www.proz.com/job/1234567',snippet:'Translation project'});
+ assert.equal(prozProject.eligible,true,'individual ProZ job pages should pass as marketplace projects');
  const sellerOffer=classifyFreelanceProject({title:'Complete Office CAD Interior Design',url:'https://www.freelancer.com/projects/design/complete-office-cad-interior-design',snippet:'Hello, I can support your ongoing interior projects with accurate 2D drafting and CAD deliverables.'});
  assert.equal(sellerOffer.eligible,false,'a freelancer offer/profile is not a client project request');
  const sellerProfile=classifyFreelanceProject({title:'CAD Interior Design Services',url:'https://www.upwork.com/freelancers/~designer/profile'});
