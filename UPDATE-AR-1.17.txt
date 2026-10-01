@@ -1,0 +1,15 @@
+تحديث RAM 1.17 الكامل
+
+ارفع الملفات الثمانية إلى المسارات نفسها داخل مستودع RAM-Agent، مع استبدال الملفات الموجودة. ارفع هذا الملف التوضيحي إلى جذر المستودع.
+
+الملفات:
+- app/src/main/assets/app.js
+- app/src/main/assets/core.js
+- app/src/main/assets/index.html
+- app/src/main/java/com/ram/agent/MainActivity.java
+- server/policy.js
+- server/server.js
+- tests/server-policy.test.mjs
+- tests/workflow.test.cjs
+
+بعد الرفع إلى main انتظر GitHub Actions لبناء APK. يتضمن app.js الأحدث: تقرير تفصيلي للفرصة، يبقى داخل الأعمال الجارية، ونقاش خاص أسفل الصفقة.
