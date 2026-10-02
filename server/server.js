@@ -6,7 +6,7 @@ app.use(express.json({ limit: "1mb" }));
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const RAM_SYSTEM = `أنت رام، وكيل أعمال ذكي يعمل مع أحمد عشيش في إنجاز القابضة. افهم الهدف من سياق المحادثة، تحقق من المعلومات عند الحاجة، ثم قدّم خطوة عملية واضحة.
-تواصل بلهجة عربية مهنية ودافئة، أو بلغة العميل إذا طُلبت رسالة له. اكتب كإنسان مهني يخاطب شخصًا محددًا: اذكر ما فهمته من احتياج المشروع، واقترح طريقة تنفيذ مناسبة، وحدد المخرج أو الخطوة التالية. تجنب المقدمات العامة والكلام الدعائي. عند طلب التواصل مع صاحب فرصة، افحص سياق الفرصة أولًا واكتب رسالة مخصصة له؛ إن لم يتوفر عنوان بريده أو وسيلة إرسال مربوطة، وضّح أن النص مسودة ولم يُرسل.
+تواصل بلهجة عربية مهنية ودافئة، أو بلغة العميل إذا طُلبت رسالة له. اربط إجابتك بتفصيل فعلي من كلام المستخدم، وافهم قصده من سياق المحادثة قبل الرد. كن مرنًا؛ أجب مباشرة، ونفّذ الجزء الممكن، واسأل سؤالًا واحدًا فقط عندما تمنع معلومة ناقصة الخطوة التالية. قدّم توصية واضحة مع سبب موجز وخطوة عملية، واذكر البدائل فقط عند وجود مفاضلة حقيقية. أظهر التعاطف باحترام من دون ادعاء مشاعر أو حواس بشرية. تجنب المقدمات العامة والكلام الدعائي. عند طلب التواصل مع صاحب فرصة، افحص سياق الفرصة أولًا واكتب رسالة مخصصة له؛ إن لم يتوفر عنوان بريده أو وسيلة إرسال مربوطة، وضّح أن النص مسودة ولم يُرسل.
 اكتب نصًا عاديًا بفقرات قصيرة. تجنب عناوين Markdown والهاشتاقات والنجوم والرموز النقطية والفواصل المتكررة. استخدم علامات الترقيم مرة واحدة وبشكل طبيعي. لا تحوّل كل رد إلى قائمة.
 في رسائل التقديم، خصّص الرسالة للمشروع من تفاصيله الفعلية، واطرح سؤالًا واحدًا مرتبطًا بنطاق العمل. لا تخترع خبرة أو عملاء سابقين أو نماذج أعمال أو مواعيد أو أسعارًا. لا تعد بتسليم ما لم يُتحقق من القدرة عليه. لا تقل إن رسالة أُرسلت أو مكالمة تمت أو عملًا سُلّم إلا بعد نجاح أداة فعلية.
 استخدم المعلومات والنتائج المتاحة فقط، وميّز بوضوح بين الحقيقة والافتراض. إذا كان نقص معلومة يمنع الخطوة، اسأل سؤالًا واحدًا محددًا. لا تكشف التفكير الداخلي؛ أعطِ خلاصة القرار والخطوة التالية.`;
@@ -29,37 +29,68 @@ function getOpenRouterKey() {
 
 async function openRouter(messages, options = {}) {
   const model = String(process.env.OPENROUTER_MODEL || "").trim();
-  if (!model || /(^|\/)free(?:$|[-/])/i.test(model)) {
-    const error = new Error("Set OPENROUTER_MODEL to a capable, non-free model in the server environment.");
-    error.code = "AI_MODEL_NOT_CONFIGURED";
-    throw error;
+  try {
+    if (!model || /(^|\/)free(?:$|[-/])/i.test(model)) {
+      const error = new Error("Set OPENROUTER_MODEL to a capable, non-free model in the server environment.");
+      error.code = "AI_MODEL_NOT_CONFIGURED";
+      throw error;
+    }
+    const response = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${getOpenRouterKey()}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": process.env.APP_URL || "https://ram-agent-production.up.railway.app",
+        "X-Title": "RAM Agent"
+      },
+      body: JSON.stringify({ model, messages, temperature: options.temperature ?? 0.35 })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error("OpenRouter request failed");
+      error.status = response.status;
+      error.details = data;
+      throw error;
+    }
+    const reply = normalizeReply(data?.choices?.[0]?.message?.content);
+    if (!reply) throw new Error("OpenRouter returned an empty reply");
+    return { reply, model: data?.model || model, provider: "openrouter" };
+  } catch (primaryError) {
+    const retryable = !primaryError.status || [429, 500, 502, 503, 504].includes(primaryError.status);
+    if (!retryable || !process.env.GEMINI_API_KEY) throw primaryError;
+    console.warn("OpenRouter unavailable; trying Gemini fallback", primaryError.status || primaryError.code || primaryError.name);
+    return geminiFallback(messages, options);
   }
-  const response = await fetch(OPENROUTER_URL, {
+}
+
+async function geminiFallback(messages, options = {}) {
+  const model = String(process.env.GEMINI_MODEL || "gemini-3.8-flash").trim();
+  const systemInstruction = messages.filter(item => item.role === "system").map(item => item.content).join("\n\n");
+  const contents = messages.filter(item => item.role !== "system").map(item => ({
+    role: item.role === "assistant" ? "model" : "user",
+    parts: [{ text: String(item.content || "") }]
+  }));
+  if (!contents.length) throw new Error("Gemini needs at least one user message");
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${getOpenRouterKey()}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": process.env.APP_URL || "https://ram-agent-production.up.railway.app",
-      "X-Title": "RAM Agent"
-    },
+    headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
     body: JSON.stringify({
-      model,
-      messages,
-      temperature: options.temperature ?? 0.35
+      ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
+      contents,
+      generationConfig: { temperature: options.temperature ?? 0.35 }
     })
   });
-
   const data = await response.json();
   if (!response.ok) {
-    const error = new Error("OpenRouter request failed");
+    const error = new Error("Gemini fallback request failed");
     error.status = response.status;
     error.details = data;
     throw error;
   }
-
-  const reply = normalizeReply(data?.choices?.[0]?.message?.content);
-  if (!reply) throw new Error("OpenRouter returned an empty reply");
-  return { reply, model: data?.model || model };
+  const reply = normalizeReply(data?.candidates?.[0]?.content?.parts?.map(part => part.text || "").join(""));
+  if (!reply) throw new Error("Gemini returned an empty reply");
+  return { reply, model, provider: "gemini" };
 }
 
 /*
@@ -223,8 +254,10 @@ app.post("/chat", async (req, res) => {
     console.error("RAM chat error:", error);
     const status = error.code === "AI_MODEL_NOT_CONFIGURED" ? 503 : (error.status || 500);
     return res.status(status).json({
-      error: error.code === "AI_MODEL_NOT_CONFIGURED" ? "لم يُضبط نموذج ذكاء اصطناعي قوي في الخادم." : "تعذر الحصول على رد من RAM",
-      details: error.details || error.message
+      error: error.code === "AI_MODEL_NOT_CONFIGURED" ? "لم يُضبط نموذج ذكاء اصطناعي قوي في الخادم."
+        : status === 429 ? "خدمات الذكاء مشغولة الآن. فعّل مفتاح Gemini الاحتياطي أو أعد المحاولة بعد قليل."
+        : "تعذر الحصول على رد من RAM",
+      details: status === 429 ? undefined : (error.details || error.message)
     });
   }
 });
