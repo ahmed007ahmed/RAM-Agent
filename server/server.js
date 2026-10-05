@@ -6,6 +6,7 @@ const app = express();
 app.use(express.json({ limit: "1mb" }));
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const CLOUDFLARE_CHAT_URL = "https://api.cloudflare.com/client/v4/accounts";
 
 // Gmail OAuth callback is deliberately public (Google redirects here). All
 // application endpoints remain behind the RAM bearer-token middleware below.
@@ -105,7 +106,7 @@ app.get('/gmail/oauth/start', (req, res) => {
   url.search = new URLSearchParams({client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: process.env.GMAIL_REDIRECT_URI, response_type: 'code', scope: GMAIL_SCOPES.join(' '), access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state}).toString();
   return res.json({ok: true, authorizationUrl: url.toString()});
 });
-app.post('/capabilities',(req,res)=>res.json({chatConfigured:Boolean((process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')||process.env.OPENROUTER_API_KEY||(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')),chatProviders:[(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')?'OpenAI API':'',process.env.OPENROUTER_API_KEY?'OpenRouter':'',(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')?'Gemini fallback':''].filter(Boolean),openAIConfigured:Boolean(process.env.OPENAI_API_KEY),openAIEnabled:process.env.ALLOW_OPENAI_API==='true',searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,makeSchedulerSupported:true,elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),gmailOAuthConfigured:gmailConfigured(),emailConnected:false,callsConnected:false,cloudJobsConnected:false,paymentsEnabled:false,paidAiAllowed:false}));
+app.post('/capabilities',(req,res)=>res.json({chatConfigured:Boolean((process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN)||(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')||process.env.OPENROUTER_API_KEY||(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')),chatProviders:[(process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN)?'Cloudflare Workers AI':'',(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')?'OpenAI API':'',process.env.OPENROUTER_API_KEY?'OpenRouter':'',(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')?'Gemini fallback':''].filter(Boolean),cloudflareConfigured:Boolean(process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN),openAIConfigured:Boolean(process.env.OPENAI_API_KEY),openAIEnabled:process.env.ALLOW_OPENAI_API==='true',searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,makeSchedulerSupported:true,elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),gmailOAuthConfigured:gmailConfigured(),emailConnected:false,callsConnected:false,cloudJobsConnected:false,paymentsEnabled:false,paidAiAllowed:false}));
 app.post('/gmail/status', async (_req, res) => {
   try {
     if (!gmailConfigured()) return res.json({ok:true, connected:false, configured:false, email:null});
@@ -140,6 +141,41 @@ function getOpenRouterKey() {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error("OPENROUTER_API_KEY is missing");
   return key;
+}
+
+async function cloudflareWorkersAI(messages, options = {}) {
+  const accountId = String(process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+  if (!accountId || !apiToken) throw Object.assign(new Error('Cloudflare Workers AI is not configured'), {code:'CLOUDFLARE_NOT_CONFIGURED'});
+  if (!/^[a-f0-9]{32}$/i.test(accountId)) throw Object.assign(new Error('CLOUDFLARE_ACCOUNT_ID must be the 32-character Account ID.'), {code:'CLOUDFLARE_ACCOUNT_ID_INVALID'});
+  const model = String(process.env.CLOUDFLARE_AI_MODEL || '@cf/zai-org/glm-5.3-flash').trim();
+  const gatewayId = String(process.env.CLOUDFLARE_AI_GATEWAY_ID || 'default').trim();
+  const response = await fetch(`${CLOUDFLARE_CHAT_URL}/${encodeURIComponent(accountId)}/ai/v1/chat/completions`, {
+    signal: AbortSignal.timeout(45000),
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+      'cf-aig-gateway-id': gatewayId
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      max_tokens: maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
+      temperature: options.temperature ?? 0.35
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error('Cloudflare Workers AI request failed');
+    error.status = response.status;
+    error.provider = 'Cloudflare Workers AI';
+    error.providerMessage = String(data?.error?.message || data?.message || '').slice(0, 180);
+    throw error;
+  }
+  const reply = data?.choices?.[0]?.message?.content?.trim();
+  if (!reply) throw Object.assign(new Error('Cloudflare returned an empty reply'), {status:503, provider:'Cloudflare Workers AI'});
+  return {reply, model:data?.model || model, provider:'Cloudflare Workers AI'};
 }
 
 async function openRouter(messages, options = {}) {
@@ -227,6 +263,8 @@ async function openAIResponses(messages, options = {}) {
 }
 
 async function answerWithFallback(messages, options = {}) {
+  // When Cloudflare is selected, do not silently fall back to another billable provider.
+  if (process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN) return cloudflareWorkersAI(messages, options);
   if(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')return openAIResponses(messages,options);
   try { return {...await openRouter(messages,options),provider:"OpenRouter"}; }
   catch (primaryError) {
