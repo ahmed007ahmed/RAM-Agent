@@ -203,17 +203,19 @@ async function cloudflareWorkersAI(messages, options = {}) {
   if (gatewayId && gatewayId.toLowerCase() !== 'default') headers['cf-aig-gateway-id'] = gatewayId;
   let response;
   try {
-    response = await fetch(`${CLOUDFLARE_CHAT_URL}/${encodeURIComponent(accountId)}/ai/v1/chat/completions`, {
-      signal: AbortSignal.timeout(45000),
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        messages,
-        max_tokens: options.maxOutputTokens || maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
-        temperature: options.temperature ?? 0.35
-      })
+    const url = `${CLOUDFLARE_CHAT_URL}/${encodeURIComponent(accountId)}/ai/v1/chat/completions`;
+    const requestBody = JSON.stringify({
+      model,
+      messages,
+      max_tokens: options.maxOutputTokens || maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
+      temperature: options.temperature ?? 0.35
     });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      response = await fetch(url, {signal:AbortSignal.timeout(45000), method:'POST', headers, body:requestBody});
+      if (response.status !== 503 || attempt === 1) break;
+      console.warn('Cloudflare Workers AI returned HTTP 503; retrying once');
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
   } catch (cause) {
     const timeout = cause?.name === 'TimeoutError' || cause?.name === 'AbortError';
     const error = new Error(timeout ? 'Cloudflare Workers AI timed out after 45 seconds' : 'Cloudflare Workers AI could not be reached');
@@ -222,15 +224,20 @@ async function cloudflareWorkersAI(messages, options = {}) {
     error.providerMessage = timeout ? '45-second request timeout' : String(cause?.cause?.code || cause?.message || 'network error').slice(0, 120);
     throw error;
   }
-  const data = await response.json().catch(() => ({}));
+  const rawBody = await response.text().catch(() => '');
+  let data = {};
+  try { data = rawBody ? JSON.parse(rawBody) : {}; } catch {}
   if (!response.ok) {
     const error = new Error('Cloudflare Workers AI request failed');
     error.status = response.status;
     error.provider = 'Cloudflare Workers AI';
     // Cloudflare API errors are normally returned in an `errors` array.
     const apiError = Array.isArray(data?.errors) ? data.errors[0] : null;
-    error.providerCode = apiError?.code ?? data?.error?.code ?? null;
-    error.providerMessage = String(apiError?.message || data?.error?.message || data?.message || '').slice(0, 240);
+    error.providerCode = apiError?.code ?? data?.error?.code ?? data?.code ?? null;
+    const plainBody = rawBody.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]*>/g, ' ').replace(/&nbsp;|&#160;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/\s+/g, ' ').trim();
+    error.providerMessage = String(apiError?.message || data?.error?.message || data?.message || plainBody || response.statusText || '').slice(0, 240);
+    error.cfRay = String(response.headers.get('cf-ray') || '').slice(0, 40);
+    error.contentType = String(response.headers.get('content-type') || '').slice(0, 80);
     error.model = model;
     throw error;
   }
@@ -523,7 +530,7 @@ app.post("/chat", async (req, res) => {
     return res.json({ reply, response: reply, model, provider, realSearch: false });
   } catch (error) {
     const diagnosticMessage=String(error.providerMessage||'').replace(/[\r\n\t]/g,' ').replace(/Bearer\s+\S+/gi,'Bearer [hidden]').replace(/(?:api[_ -]?key|token)\s*[:=]\s*\S+/gi,'credential=[hidden]').slice(0,180);
-    console.error("RAM chat error:", error.provider || "AI", error.status || "unknown", error.model || process.env.CLOUDFLARE_AI_MODEL || "default-model", error.providerCode || "", diagnosticMessage);
+    console.error("RAM chat error:", error.provider || "AI", error.status || "unknown", error.model || process.env.CLOUDFLARE_AI_MODEL || "default-model", error.providerCode || "", diagnosticMessage, error.cfRay || "");
     const message=error.status===429
       ? "وصلت خدمة الذكاء الاصطناعي إلى حد الطلبات المجانية مؤقتًا. انتظر قليلًا ثم أعد المحاولة؛ لم يتم احتساب العمل كمنجز."
       : error.provider==="Cloudflare Workers AI"&&(error.status===408||error.status===504)
@@ -533,7 +540,7 @@ app.post("/chat", async (req, res) => {
       : error.provider==="Cloudflare Workers AI"&&error.status===410
         ? "Cloudflare أوقف أو لم يعد يتيح النموذج المحدد لهذا الحساب (HTTP 410). في Railway اضبط CLOUDFLARE_AI_MODEL على @cf/zai-org/glm-4.7-flash، واترك CLOUDFLARE_AI_GATEWAY_ID فارغًا ما لم تكن قد أنشأت بوابة AI فعلًا."
       : error.provider==="Cloudflare Workers AI"&&error.status===503
-        ? `Cloudflare لم يرد (HTTP 503${error.providerCode?`, الرمز ${error.providerCode}`:''}). ${diagnosticMessage?`السبب الذي أعاده: ${diagnosticMessage}. `:''}لم يُنجز الطلب؛ أعد المحاولة بعد دقيقة.`
+        ? `Cloudflare لم يرد (HTTP 503${error.providerCode?`, الرمز ${error.providerCode}`:''}). ${diagnosticMessage?`تفاصيل الرد: ${diagnosticMessage}. `:''}${error.cfRay?`مرجع Cloudflare: ${error.cfRay}. `:''}لم يُنجز الطلب؛ لم تُرسل أي أداة ولم يُحتسب العمل منجزًا.`
       : error.provider==="Cloudflare Workers AI"&&error.status===403
         ? /5035|paid plan|workers paid/i.test(error.providerMessage||"")
           ? "هذا النموذج يتطلب خطة Workers مدفوعة. اختر نموذجًا متاحًا في خطتك أو فعّل الخطة المطلوبة."
