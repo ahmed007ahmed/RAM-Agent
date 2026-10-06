@@ -210,7 +210,7 @@ async function cloudflareWorkersAI(messages, options = {}) {
       body: JSON.stringify({
         model,
         messages,
-        max_tokens: maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
+        max_tokens: options.maxOutputTokens || maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
         temperature: options.temperature ?? 0.35
       })
     });
@@ -251,7 +251,7 @@ async function openRouter(messages, options = {}) {
     },
     body: JSON.stringify({
       model: checkedModel(process.env),
-      max_tokens: maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
+      max_tokens: options.maxOutputTokens || maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
       messages,
       temperature: options.temperature ?? 0.35
     })
@@ -290,7 +290,7 @@ async function gemini(messages, options = {}) {
     body: JSON.stringify({
       ...(system ? {systemInstruction:{parts:[{text:system}]}} : {}),
       contents,
-      generationConfig:{temperature:options.temperature??0.35,maxOutputTokens:maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS)}
+      generationConfig:{temperature:options.temperature??0.35,maxOutputTokens:options.maxOutputTokens||maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS)}
     })
   });
   const data = await response.json();
@@ -314,7 +314,7 @@ async function openAIResponses(messages, options = {}) {
   const response=await fetch('https://api.openai.com/v1/responses',{
     signal:AbortSignal.timeout(40000),method:'POST',
     headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},
-    body:JSON.stringify({model:process.env.OPENAI_MODEL||'gpt-5.4-mini',instructions:system,input,max_output_tokens:maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),store:false})
+    body:JSON.stringify({model:process.env.OPENAI_MODEL||'gpt-5.4-mini',instructions:system,input,max_output_tokens:options.maxOutputTokens||maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),store:false})
   });
   const data=await response.json();
   if(!response.ok){const error=new Error('OpenAI Responses API request failed');error.status=response.status;error.provider='OpenAI API';throw error;}
@@ -491,9 +491,9 @@ app.post("/chat", async (req, res) => {
     const message = String(req.body?.message || "").trim();
     if (!message) return res.status(400).json({ error: "الرسالة فارغة" });
 
-    const history = (Array.isArray(req.body?.history) ? req.body.history : []).slice(-10)
+    const history = (Array.isArray(req.body?.history) ? req.body.history : []).slice(-6)
       .filter(x => x && ["user", "assistant"].includes(x.role) && typeof x.content === "string")
-      .map(x => ({role:x.role,content:x.content.slice(0,2000)}));
+      .map(x => ({role:x.role,content:x.content.slice(0,1400)}));
     if (message.length > 6000) return res.status(400).json({error:"الرسالة طويلة جدًا"});
     // Search automatically when the request clearly asks for current web discovery.
     if (searchIntent(message)) {
@@ -512,29 +512,18 @@ app.post("/chat", async (req, res) => {
     const { reply, model, provider } = await answerWithFallback([
       {
         role: "system",
-        content: `أنت RAM (رام عشيش)، مساعد أحمد عشيش في إنجاز القابضة.
-أجب عن آخر رسالة مباشرة وبأسلوب عربي طبيعي ومختصر، مع مراعاة لهجة المستخدم. ابدأ بالمطلوب نفسه؛ لا تقدم نفسك ولا تسرد خدمات الشركة إلا إذا سُئلت عنها.
-استخدم الرسائل السابقة لفهم السياق، ولا تنسب إلى نفسك معرفة أحداث أو تحديثات لم تظهر في هذه المحادثة. إذا طلب المستخدم تلخيص شيء غير موجود في السياق، اطلب منه إرسال النص أو الصورة المعنية بدل اختراع ملخص.
-لا تكرر السؤال بصياغة أخرى. إن كان المطلوب واضحًا، أعطِ نتيجة أو خطوة عملية محددة. إن نقصت معلومة أساسية، اسأل سؤالًا واحدًا واضحًا.
-ساعد في البرمجة والتصميم والترجمة والبحث والأعمال الهندسية والشحن واللوجستيات والعقارات والتجارة.
-ملف إنجاز القابضة المحلي: شركة خدمات وتنسيق أعمال متعددة المجالات، وتاريخ العمل منذ 2020 معلومة قدمها مالكها. المجالات: الهندسة ومخططات المساحة والديكور والتصميم؛ المواقع والبرمجة؛ الاستشارات والأبحاث ودراسات المشاريع التجارية وتطوير المشاريع الاستثمارية؛ الترجمة؛ تنسيق الشحن؛ والوساطة في التوريد والاستفسارات التجارية للطاقة وفق الأنظمة. لا توجد في البيانات الحالية شهادات تسجيل أو مراجع عملاء أو نماذج أعمال موثقة؛ لا تخترعها. إذا طلب المالك ردًا على استفسار شركة، جهّز مسودة مهنية من هذه المعلومات واطلب مراجعته؛ لا تدّع إرسالها.
-لا تخترع نتائج بحث أو أسماء أو أسعاراً أو روابط.
-لا تدّع أنك اتصلت أو أرسلت أو نفذت معاملة إلا إذا أعادت أداة التنفيذ نتيجة نجاح.
-لا تنفذ أي إرسال أو تحويل أو سحب أموال من حسابات المستخدم.
-تحدث بتعاطف وبأسلوب طبيعي دون ادعاء وعي أو جهاز عصبي أو مشاعر حقيقية.
-لا تعتبر مبلغًا مستلمًا ولا عملًا مكتملًا من تلقاء نفسك؛ صاحب الحساب يؤكد الاستلام في سجل العمل.
-إرسال البريد متاح من شاشة Gmail بعد مراجعة المالك وتأكيده، وتشغيل n8n متاح من بطاقة العمل بعد تأكيده؛ لا تبدأ هذه الإجراءات من نص المحادثة وحده. لا توجد مكالمات أو تسليم مباشر إلى منصات العمل أو تحصيل أو تحويل أموال.
-اعرض العروض الموثقة مع المصدر، ولا تساوِ بين مجرد إعلان وعقد مقبول.
-لا تصف تأخر الدفع وحده بأنه احتيال، ولا تدّع تقديم شكوى أو تحكيم.
-أجب بالعربية افتراضياً.`
+        content: `أنت رام، مساعد أحمد عشيش في إنجاز القابضة. أجب عن آخر رسالة مباشرة بالعربية وبلهجة المستخدم، بنبرة دافئة وحيوية ومرنة وطبيعية. أظهر التفهم إذا عبّر عن شعور، دون مبالغة أو ادعاء مشاعر أو وعي. لا تقدم نفسك ولا تكرر السؤال. أعطِ جوابًا عمليًا موجزًا أولًا؛ اسأل سؤالًا واحدًا فقط إذا نقصت معلومة أساسية. استخدم سياق الرسائل ولا تخترع ما لم يرد فيه.
+مجالات الشركة: الهندسة والتصميم والديكور والمساحة، المواقع والبرمجة، الاستشارات والأبحاث التجارية، الترجمة، تنسيق الشحن، والتوريد. تاريخ العمل منذ 2020 معلومة قدمها المالك. لا توجد شهادات أو مراجع عملاء أو نماذج موثقة؛ لا تخترعها.
+لا تختلق بحثًا أو أسعارًا أو روابط أو نتائج أدوات. لا تقل إن رسالة أُرسلت أو مهمة أُنجزت إلا بعد نجاح الأداة. البريد يُرسل من شاشة Gmail بعد مراجعة المالك وتأكيده؛ تشغيل n8n من بطاقة العمل بعد تأكيده. لا تنفذ معاملات مالية أو تحصيل أموال. ميّز الإعلان عن العقد المقبول، ولا تصف تأخر الدفع وحده بأنه احتيال. إذا كانت الأداة المطلوبة غير متصلة، قل ذلك بوضوح وحدد أقرب خطوة قابلة للتنفيذ. أجب بالعربية افتراضيًا.`
       },
       ...history,
       { role: "user", content: message }
-    ]);
+    ], {temperature:0.65,maxOutputTokens:768});
 
     return res.json({ reply, response: reply, model, provider, realSearch: false });
   } catch (error) {
-    console.error("RAM chat error:", error.provider || "AI", error.status || "unknown", error.model || process.env.CLOUDFLARE_AI_MODEL || "default-model", error.providerCode || "", String(error.providerMessage || "").slice(0, 240));
+    const diagnosticMessage=String(error.providerMessage||'').replace(/[\r\n\t]/g,' ').replace(/Bearer\s+\S+/gi,'Bearer [hidden]').replace(/(?:api[_ -]?key|token)\s*[:=]\s*\S+/gi,'credential=[hidden]').slice(0,180);
+    console.error("RAM chat error:", error.provider || "AI", error.status || "unknown", error.model || process.env.CLOUDFLARE_AI_MODEL || "default-model", error.providerCode || "", diagnosticMessage);
     const message=error.status===429
       ? "وصلت خدمة الذكاء الاصطناعي إلى حد الطلبات المجانية مؤقتًا. انتظر قليلًا ثم أعد المحاولة؛ لم يتم احتساب العمل كمنجز."
       : error.provider==="Cloudflare Workers AI"&&(error.status===408||error.status===504)
@@ -544,7 +533,7 @@ app.post("/chat", async (req, res) => {
       : error.provider==="Cloudflare Workers AI"&&error.status===410
         ? "Cloudflare أوقف أو لم يعد يتيح النموذج المحدد لهذا الحساب (HTTP 410). في Railway اضبط CLOUDFLARE_AI_MODEL على @cf/zai-org/glm-4.7-flash، واترك CLOUDFLARE_AI_GATEWAY_ID فارغًا ما لم تكن قد أنشأت بوابة AI فعلًا."
       : error.provider==="Cloudflare Workers AI"&&error.status===503
-        ? "Cloudflare أعاد HTTP 503 للنموذج. لم يُنجز الطلب؛ راجع آخر سطر في سجل Railway لمعرفة رمز Cloudflare وسبب الرفض."
+        ? `Cloudflare لم يرد (HTTP 503${error.providerCode?`, الرمز ${error.providerCode}`:''}). ${diagnosticMessage?`السبب الذي أعاده: ${diagnosticMessage}. `:''}لم يُنجز الطلب؛ أعد المحاولة بعد دقيقة.`
       : error.provider==="Cloudflare Workers AI"&&error.status===403
         ? /5035|paid plan|workers paid/i.test(error.providerMessage||"")
           ? "هذا النموذج يتطلب خطة Workers مدفوعة. اختر نموذجًا متاحًا في خطتك أو فعّل الخطة المطلوبة."
