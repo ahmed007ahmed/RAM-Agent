@@ -134,6 +134,33 @@ app.post('/integrations/n8n/test', async (req,res) => {
     return res.status(502).json({error:timeout?'انتهت مهلة اتصال n8n. تحقق من الرابط وحالة الـ workflow.':'تعذر الوصول إلى n8n. تحقق من رابط Production Webhook.'});
   }
 });
+app.post('/voice/transcribe', express.raw({type:'audio/wav', limit:'6mb'}), async (req, res) => {
+  const accountId=String(process.env.CLOUDFLARE_ACCOUNT_ID||'').trim();
+  const token=String(process.env.CLOUDFLARE_API_TOKEN||'').trim();
+  if(!accountId||!token||!(/^[a-f0-9]{32}$/i.test(accountId))) return res.status(503).json({error:'تحويل الصوت غير مهيأ. تحقق من Account ID ورمز Workers AI في Railway.'});
+  if(!Buffer.isBuffer(req.body)||req.body.length<44||req.body.length>6_000_000||req.body.toString('ascii',0,4)!=='RIFF'||req.body.toString('ascii',8,12)!=='WAVE') return res.status(400).json({error:'مقطع WAV غير صالح أو فارغ.'});
+  try {
+    const model='@cf/openai/whisper-large-v3-turbo';
+    const upstream=await fetch(`${CLOUDFLARE_CHAT_URL}/${accountId}/ai/run/${model}`,{
+      method:'POST',signal:AbortSignal.timeout(60000),
+      headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+      body:JSON.stringify({audio:req.body.toString('base64'),task:'transcribe',language:'ar',vad_filter:true})
+    });
+    const data=await upstream.json().catch(()=>({}));
+    if(!upstream.ok){
+      const status=upstream.status===401||upstream.status===403?503:upstream.status===429?429:502;
+      const message=status===503?'Cloudflare رفض طلب Workers AI. راجع صلاحية الرمز وإعداد الحساب في Railway.':status===429?'وصل Workers AI إلى حد الاستخدام. انتظر قليلًا ثم أعد المحاولة.':`فشل تحويل الصوت في Workers AI (HTTP ${upstream.status}).`;
+      return res.status(status).json({error:message});
+    }
+    const text=String(data?.result?.text||data?.text||'').trim();
+    if(!text)return res.status(422).json({error:'لم يتعرف Whisper على كلام واضح في المقطع.'});
+    return res.json({ok:true,text});
+  } catch(error) {
+    const timeout=error?.name==='TimeoutError'||error?.name==='AbortError';
+    return res.status(502).json({error:timeout?'تأخر تحويل الصوت. تحقق من اتصال Railway وWorkers AI.':'تعذر الوصول إلى Cloudflare Workers AI؛ راجع اتصال الخادم.'});
+  }
+});
+
 app.post('/gmail/status', async (_req, res) => {
   try {
     if (!gmailConfigured()) return res.json({ok:true, connected:false, configured:false, email:null});
