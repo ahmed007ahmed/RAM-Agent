@@ -194,29 +194,41 @@ async function cloudflareWorkersAI(messages, options = {}) {
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
   if (!accountId || !apiToken) throw Object.assign(new Error('Cloudflare Workers AI is not configured'), {code:'CLOUDFLARE_NOT_CONFIGURED'});
   if (!/^[a-f0-9]{32}$/i.test(accountId)) throw Object.assign(new Error('CLOUDFLARE_ACCOUNT_ID must be the 32-character Account ID.'), {code:'CLOUDFLARE_ACCOUNT_ID_INVALID'});
-  const model = String(process.env.CLOUDFLARE_AI_MODEL || '@cf/zai-org/glm-5.3-flash').trim();
-  const gatewayId = String(process.env.CLOUDFLARE_AI_GATEWAY_ID || 'default').trim();
-  const response = await fetch(`${CLOUDFLARE_CHAT_URL}/${encodeURIComponent(accountId)}/ai/v1/chat/completions`, {
-    signal: AbortSignal.timeout(45000),
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiToken}`,
-      'Content-Type': 'application/json',
-      'cf-aig-gateway-id': gatewayId
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      max_tokens: maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
-      temperature: options.temperature ?? 0.35
-    })
-  });
+  // GLM-4.7-Flash is optimized for multilingual dialogue and multi-turn
+  // instruction following. Do not invent an AI Gateway ID: the direct Workers
+  // AI endpoint works without the gateway header.
+  const model = String(process.env.CLOUDFLARE_AI_MODEL || '@cf/zai-org/glm-4.7-flash').trim();
+  const gatewayId = String(process.env.CLOUDFLARE_AI_GATEWAY_ID || '').trim();
+  const headers = {Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json'};
+  if (gatewayId && gatewayId.toLowerCase() !== 'default') headers['cf-aig-gateway-id'] = gatewayId;
+  let response;
+  try {
+    response = await fetch(`${CLOUDFLARE_CHAT_URL}/${encodeURIComponent(accountId)}/ai/v1/chat/completions`, {
+      signal: AbortSignal.timeout(45000),
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        messages,
+        max_tokens: maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
+        temperature: options.temperature ?? 0.35
+      })
+    });
+  } catch (cause) {
+    const timeout = cause?.name === 'TimeoutError' || cause?.name === 'AbortError';
+    const error = new Error(timeout ? 'Cloudflare Workers AI timed out after 45 seconds' : 'Cloudflare Workers AI could not be reached');
+    error.status = timeout ? 504 : 502;
+    error.provider = 'Cloudflare Workers AI';
+    error.providerMessage = timeout ? '45-second request timeout' : String(cause?.cause?.code || cause?.message || 'network error').slice(0, 120);
+    throw error;
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error('Cloudflare Workers AI request failed');
     error.status = response.status;
     error.provider = 'Cloudflare Workers AI';
     error.providerMessage = String(data?.error?.message || data?.message || '').slice(0, 180);
+    error.model = model;
     throw error;
   }
   const reply = data?.choices?.[0]?.message?.content?.trim();
@@ -497,10 +509,10 @@ app.post("/chat", async (req, res) => {
     const { reply, model, provider } = await answerWithFallback([
       {
         role: "system",
-        content: `أنت RAM (رام عشيش)، مساعد ذكاء اصطناعي شخصي ووكيل أعمال لأحمد عشيش.
-تحدث بصورة طبيعية وذكية وسريعة، وافهم المقصد من السياق.
-لا تكرر قوائم الخدمات أو كلام المستخدم بلا داع.
-إذا كان الطلب واضحاً فابدأ أقرب خطوة قابلة للتنفيذ.
+        content: `أنت RAM (رام عشيش)، مساعد أحمد عشيش في إنجاز القابضة.
+أجب عن آخر رسالة مباشرة وبأسلوب عربي طبيعي ومختصر، مع مراعاة لهجة المستخدم. ابدأ بالمطلوب نفسه؛ لا تقدم نفسك ولا تسرد خدمات الشركة إلا إذا سُئلت عنها.
+استخدم الرسائل السابقة لفهم السياق، ولا تنسب إلى نفسك معرفة أحداث أو تحديثات لم تظهر في هذه المحادثة. إذا طلب المستخدم تلخيص شيء غير موجود في السياق، اطلب منه إرسال النص أو الصورة المعنية بدل اختراع ملخص.
+لا تكرر السؤال بصياغة أخرى. إن كان المطلوب واضحًا، أعطِ نتيجة أو خطوة عملية محددة. إن نقصت معلومة أساسية، اسأل سؤالًا واحدًا واضحًا.
 ساعد في البرمجة والتصميم والترجمة والبحث والأعمال الهندسية والشحن واللوجستيات والعقارات والتجارة.
 ملف إنجاز القابضة المحلي: شركة خدمات وتنسيق أعمال متعددة المجالات، وتاريخ العمل منذ 2020 معلومة قدمها مالكها. المجالات: الهندسة ومخططات المساحة والديكور والتصميم؛ المواقع والبرمجة؛ الاستشارات والأبحاث ودراسات المشاريع التجارية وتطوير المشاريع الاستثمارية؛ الترجمة؛ تنسيق الشحن؛ والوساطة في التوريد والاستفسارات التجارية للطاقة وفق الأنظمة. لا توجد في البيانات الحالية شهادات تسجيل أو مراجع عملاء أو نماذج أعمال موثقة؛ لا تخترعها. إذا طلب المالك ردًا على استفسار شركة، جهّز مسودة مهنية من هذه المعلومات واطلب مراجعته؛ لا تدّع إرسالها.
 لا تخترع نتائج بحث أو أسماء أو أسعاراً أو روابط.
@@ -508,7 +520,7 @@ app.post("/chat", async (req, res) => {
 لا تنفذ أي إرسال أو تحويل أو سحب أموال من حسابات المستخدم.
 تحدث بتعاطف وبأسلوب طبيعي دون ادعاء وعي أو جهاز عصبي أو مشاعر حقيقية.
 لا تعتبر مبلغًا مستلمًا ولا عملًا مكتملًا من تلقاء نفسك؛ صاحب الحساب يؤكد الاستلام في سجل العمل.
-لا توجد أدوات بريد أو مكالمات أو تحصيل أو تنفيذ مستقل متصلة بهذا الخادم. لا تدّع وجودها.
+إرسال البريد متاح من شاشة Gmail بعد مراجعة المالك وتأكيده، وتشغيل n8n متاح من بطاقة العمل بعد تأكيده؛ لا تبدأ هذه الإجراءات من نص المحادثة وحده. لا توجد مكالمات أو تسليم مباشر إلى منصات العمل أو تحصيل أو تحويل أموال.
 اعرض العروض الموثقة مع المصدر، ولا تساوِ بين مجرد إعلان وعقد مقبول.
 لا تصف تأخر الدفع وحده بأنه احتيال، ولا تدّع تقديم شكوى أو تحكيم.
 أجب بالعربية افتراضياً.`
@@ -519,9 +531,19 @@ app.post("/chat", async (req, res) => {
 
     return res.json({ reply, response: reply, model, provider, realSearch: false });
   } catch (error) {
-    console.error("RAM chat error:", error.provider || "AI", error.status || "unknown");
+    console.error("RAM chat error:", error.provider || "AI", error.status || "unknown", error.model || process.env.CLOUDFLARE_AI_MODEL || "default-model", String(error.providerMessage || "").slice(0, 180));
     const message=error.status===429
       ? "وصلت خدمة الذكاء الاصطناعي إلى حد الطلبات المجانية مؤقتًا. انتظر قليلًا ثم أعد المحاولة؛ لم يتم احتساب العمل كمنجز."
+      : error.provider==="Cloudflare Workers AI"&&(error.status===408||error.status===504)
+        ? "انتهت مهلة Cloudflare قبل الرد. استغرق الطلب أكثر من 45 ثانية؛ لم يُسجل إنجاز للعمل. راجع سجل Railway لمعرفة حالة الخادم."
+      : error.provider==="Cloudflare Workers AI"&&(error.status===400||error.status===404)
+        ? "رفض Cloudflare اسم النموذج أو صيغة الطلب. تحقق من قيمة CLOUDFLARE_AI_MODEL في Railway."
+      : error.provider==="Cloudflare Workers AI"&&error.status===410
+        ? "Cloudflare أوقف أو لم يعد يتيح النموذج المحدد لهذا الحساب (HTTP 410). في Railway اضبط CLOUDFLARE_AI_MODEL على @cf/zai-org/glm-4.7-flash، واترك CLOUDFLARE_AI_GATEWAY_ID فارغًا ما لم تكن قد أنشأت بوابة AI فعلًا."
+      : error.provider==="Cloudflare Workers AI"&&error.status===403
+        ? /5035|paid plan|workers paid/i.test(error.providerMessage||"")
+          ? "هذا النموذج يتطلب خطة Workers مدفوعة. اختر نموذجًا متاحًا في خطتك أو فعّل الخطة المطلوبة."
+          : "رفض Cloudflare صلاحية الطلب. تحقق من صلاحية Workers AI للحساب والرمز وإتاحة النموذج للخطة."
       : error.provider==="AI" ? error.message : error.provider ? `تعذر الحصول على رد من ${error.provider}؛ تحقّق من المفتاح والحصة وإعداد النموذج.` : "تعذر الحصول على رد من RAM الآن؛ تحقّق من إعداد مزود الذكاء الاصطناعي.";
     return res.status(error.status || 500).json({
       error: message
