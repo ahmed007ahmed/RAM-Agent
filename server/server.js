@@ -201,49 +201,99 @@ async function cloudflareWorkersAI(messages, options = {}) {
   const gatewayId = String(process.env.CLOUDFLARE_AI_GATEWAY_ID || '').trim();
   const headers = {Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json'};
   if (gatewayId && gatewayId.toLowerCase() !== 'default') headers['cf-aig-gateway-id'] = gatewayId;
-  let response;
+  const requestOptions = {
+    max_tokens: options.maxOutputTokens || maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
+    temperature: options.temperature ?? 0.35
+  };
+  const describeFailure = (response, rawBody) => {
+    let data = {};
+    try { data = rawBody ? JSON.parse(rawBody) : {}; } catch {}
+    const apiError = Array.isArray(data?.errors) ? data.errors[0] : null;
+    const plainBody = rawBody.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]*>/g, ' ').replace(/&nbsp;|&#160;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/\s+/g, ' ').trim();
+    return {
+      status: response.status,
+      providerCode: apiError?.code ?? data?.error?.code ?? data?.code ?? null,
+      providerMessage: String(apiError?.message || data?.error?.message || data?.message || plainBody || response.statusText || '').slice(0, 240),
+      cfRay: String(response.headers.get('cf-ray') || '').slice(0, 40),
+      contentType: String(response.headers.get('content-type') || '').slice(0, 80)
+    };
+  };
+  let chatFailure = null;
   try {
     const url = `${CLOUDFLARE_CHAT_URL}/${encodeURIComponent(accountId)}/ai/v1/chat/completions`;
     const requestBody = JSON.stringify({
       model,
       messages,
-      max_tokens: options.maxOutputTokens || maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
-      temperature: options.temperature ?? 0.35
+      ...requestOptions
     });
+    let response;
     for (let attempt = 0; attempt < 2; attempt++) {
       response = await fetch(url, {signal:AbortSignal.timeout(45000), method:'POST', headers, body:requestBody});
       if (response.status !== 503 || attempt === 1) break;
       console.warn('Cloudflare Workers AI returned HTTP 503; retrying once');
       await new Promise(resolve => setTimeout(resolve, 500));
     }
+    const rawBody = await response.text().catch(() => '');
+    let data = {};
+    try { data = rawBody ? JSON.parse(rawBody) : {}; } catch {}
+    if (response.ok) {
+      const reply = data?.choices?.[0]?.message?.content?.trim();
+      if (reply) return {reply, model:data?.model || model, provider:'Cloudflare Workers AI'};
+      chatFailure = {status:503, providerCode:'EMPTY_CHAT_COMPLETION', providerMessage:`Chat Completions returned HTTP ${response.status} without choices.message.content; body: ${rawBody.slice(0, 180)}`, cfRay:String(response.headers.get('cf-ray') || '').slice(0, 40), contentType:String(response.headers.get('content-type') || '').slice(0, 80)};
+      console.warn('Cloudflare Chat Completions returned an empty reply; trying native Workers AI REST endpoint');
+    } else {
+      chatFailure = describeFailure(response, rawBody);
+      if (response.status !== 503) {
+        const error = new Error('Cloudflare Workers AI request failed');
+        Object.assign(error, chatFailure, {provider:'Cloudflare Workers AI', model});
+        throw error;
+      }
+      console.warn('Cloudflare Chat Completions returned HTTP 503; trying native Workers AI REST endpoint');
+    }
+  } catch (cause) {
+    if (cause?.provider === 'Cloudflare Workers AI') throw cause;
+    const timeout = cause?.name === 'TimeoutError' || cause?.name === 'AbortError';
+    chatFailure = {status:timeout ? 504 : 502, providerMessage:timeout ? 'Chat Completions request timed out after 45 seconds' : String(cause?.cause?.code || cause?.message || 'network error').slice(0, 120)};
+    console.warn('Cloudflare Chat Completions failed; trying native Workers AI REST endpoint:', chatFailure.providerMessage);
+  }
+  // Call the native Workers AI endpoint too. The Playground uses the Workers AI
+  // runtime directly; this fallback avoids depending only on the compatibility
+  // layer and accepts its native { response: "..." } result shape.
+  let nativeResponse;
+  let nativeRawBody = '';
+  try {
+    const nativeUrl = `${CLOUDFLARE_CHAT_URL}/${encodeURIComponent(accountId)}/ai/run/${model}`;
+    nativeResponse = await fetch(nativeUrl, {
+      signal:AbortSignal.timeout(45000), method:'POST', headers,
+      body:JSON.stringify({messages, ...requestOptions})
+    });
+    nativeRawBody = await nativeResponse.text().catch(() => '');
   } catch (cause) {
     const timeout = cause?.name === 'TimeoutError' || cause?.name === 'AbortError';
-    const error = new Error(timeout ? 'Cloudflare Workers AI timed out after 45 seconds' : 'Cloudflare Workers AI could not be reached');
-    error.status = timeout ? 504 : 502;
-    error.provider = 'Cloudflare Workers AI';
-    error.providerMessage = timeout ? '45-second request timeout' : String(cause?.cause?.code || cause?.message || 'network error').slice(0, 120);
-    throw error;
+    throw Object.assign(new Error('Cloudflare Workers AI native REST request failed'), {
+      status:timeout ? 504 : 502, provider:'Cloudflare Workers AI', model,
+      providerMessage:`Chat Completions: ${chatFailure?.providerMessage || `HTTP ${chatFailure?.status || 'unknown'}`}; native REST: ${timeout ? '45-second request timeout' : String(cause?.cause?.code || cause?.message || 'network error').slice(0, 120)}`,
+      providerCode:chatFailure?.providerCode || null, cfRay:chatFailure?.cfRay || ''
+    });
   }
-  const rawBody = await response.text().catch(() => '');
-  let data = {};
-  try { data = rawBody ? JSON.parse(rawBody) : {}; } catch {}
-  if (!response.ok) {
-    const error = new Error('Cloudflare Workers AI request failed');
-    error.status = response.status;
-    error.provider = 'Cloudflare Workers AI';
-    // Cloudflare API errors are normally returned in an `errors` array.
-    const apiError = Array.isArray(data?.errors) ? data.errors[0] : null;
-    error.providerCode = apiError?.code ?? data?.error?.code ?? data?.code ?? null;
-    const plainBody = rawBody.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]*>/g, ' ').replace(/&nbsp;|&#160;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/\s+/g, ' ').trim();
-    error.providerMessage = String(apiError?.message || data?.error?.message || data?.message || plainBody || response.statusText || '').slice(0, 240);
-    error.cfRay = String(response.headers.get('cf-ray') || '').slice(0, 40);
-    error.contentType = String(response.headers.get('content-type') || '').slice(0, 80);
-    error.model = model;
-    throw error;
+  let nativeData = {};
+  try { nativeData = nativeRawBody ? JSON.parse(nativeRawBody) : {}; } catch {}
+  if (nativeResponse.ok) {
+    const nativeReply = typeof nativeData?.response === 'string'
+      ? nativeData.response.trim()
+      : (typeof nativeData?.result?.response === 'string' ? nativeData.result.response.trim() : '');
+    if (nativeReply) return {reply:nativeReply, model, provider:'Cloudflare Workers AI'};
   }
-  const reply = data?.choices?.[0]?.message?.content?.trim();
-  if (!reply) throw Object.assign(new Error('Cloudflare returned an empty reply'), {status:503, provider:'Cloudflare Workers AI'});
-  return {reply, model:data?.model || model, provider:'Cloudflare Workers AI'};
+  const nativeFailure = describeFailure(nativeResponse, nativeRawBody);
+  const error = new Error('Cloudflare Workers AI request failed through both supported endpoints');
+  error.status = nativeResponse.ok ? 503 : nativeResponse.status;
+  error.provider = 'Cloudflare Workers AI';
+  error.model = model;
+  error.providerCode = nativeFailure.providerCode || chatFailure?.providerCode || null;
+  error.providerMessage = `Chat Completions HTTP ${chatFailure?.status || 'unknown'}${chatFailure?.providerCode ? ` code ${chatFailure.providerCode}` : ''}: ${chatFailure?.providerMessage || 'no response details'}; native REST HTTP ${nativeFailure.status}${nativeFailure.providerCode ? ` code ${nativeFailure.providerCode}` : ''}: ${nativeFailure.providerMessage || 'no response details'}`.slice(0, 420);
+  error.cfRay = nativeFailure.cfRay || chatFailure?.cfRay || '';
+  error.contentType = nativeFailure.contentType || chatFailure?.contentType || '';
+  throw error;
 }
 
 async function openRouter(messages, options = {}) {
