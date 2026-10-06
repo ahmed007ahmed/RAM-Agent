@@ -227,7 +227,10 @@ async function cloudflareWorkersAI(messages, options = {}) {
     const error = new Error('Cloudflare Workers AI request failed');
     error.status = response.status;
     error.provider = 'Cloudflare Workers AI';
-    error.providerMessage = String(data?.error?.message || data?.message || '').slice(0, 180);
+    // Cloudflare API errors are normally returned in an `errors` array.
+    const apiError = Array.isArray(data?.errors) ? data.errors[0] : null;
+    error.providerCode = apiError?.code ?? data?.error?.code ?? null;
+    error.providerMessage = String(apiError?.message || data?.error?.message || data?.message || '').slice(0, 240);
     error.model = model;
     throw error;
   }
@@ -531,7 +534,7 @@ app.post("/chat", async (req, res) => {
 
     return res.json({ reply, response: reply, model, provider, realSearch: false });
   } catch (error) {
-    console.error("RAM chat error:", error.provider || "AI", error.status || "unknown", error.model || process.env.CLOUDFLARE_AI_MODEL || "default-model", String(error.providerMessage || "").slice(0, 180));
+    console.error("RAM chat error:", error.provider || "AI", error.status || "unknown", error.model || process.env.CLOUDFLARE_AI_MODEL || "default-model", error.providerCode || "", String(error.providerMessage || "").slice(0, 240));
     const message=error.status===429
       ? "وصلت خدمة الذكاء الاصطناعي إلى حد الطلبات المجانية مؤقتًا. انتظر قليلًا ثم أعد المحاولة؛ لم يتم احتساب العمل كمنجز."
       : error.provider==="Cloudflare Workers AI"&&(error.status===408||error.status===504)
@@ -540,6 +543,8 @@ app.post("/chat", async (req, res) => {
         ? "رفض Cloudflare اسم النموذج أو صيغة الطلب. تحقق من قيمة CLOUDFLARE_AI_MODEL في Railway."
       : error.provider==="Cloudflare Workers AI"&&error.status===410
         ? "Cloudflare أوقف أو لم يعد يتيح النموذج المحدد لهذا الحساب (HTTP 410). في Railway اضبط CLOUDFLARE_AI_MODEL على @cf/zai-org/glm-4.7-flash، واترك CLOUDFLARE_AI_GATEWAY_ID فارغًا ما لم تكن قد أنشأت بوابة AI فعلًا."
+      : error.provider==="Cloudflare Workers AI"&&error.status===503
+        ? "Cloudflare أعاد HTTP 503 للنموذج. لم يُنجز الطلب؛ راجع آخر سطر في سجل Railway لمعرفة رمز Cloudflare وسبب الرفض."
       : error.provider==="Cloudflare Workers AI"&&error.status===403
         ? /5035|paid plan|workers paid/i.test(error.providerMessage||"")
           ? "هذا النموذج يتطلب خطة Workers مدفوعة. اختر نموذجًا متاحًا في خطتك أو فعّل الخطة المطلوبة."
