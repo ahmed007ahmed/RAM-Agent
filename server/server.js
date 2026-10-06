@@ -161,6 +161,7 @@ app.post('/voice/transcribe', express.raw({type:'audio/wav', limit:'6mb'}), asyn
   }
 });
 
+
 app.post('/gmail/status', async (_req, res) => {
   try {
     if (!gmailConfigured()) return res.json({ok:true, connected:false, configured:false, email:null});
@@ -205,7 +206,7 @@ async function cloudflareWorkersAI(messages, options = {}) {
   const model = String(process.env.CLOUDFLARE_AI_MODEL || '@cf/zai-org/glm-5.3-flash').trim();
   const gatewayId = String(process.env.CLOUDFLARE_AI_GATEWAY_ID || 'default').trim();
   const response = await fetch(`${CLOUDFLARE_CHAT_URL}/${encodeURIComponent(accountId)}/ai/v1/chat/completions`, {
-    signal: AbortSignal.timeout(45000),
+    signal: AbortSignal.timeout(12000),
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiToken}`,
@@ -216,7 +217,8 @@ async function cloudflareWorkersAI(messages, options = {}) {
       model,
       messages,
       max_tokens: maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
-      temperature: options.temperature ?? 0.35
+      temperature: options.temperature ?? 0.35,
+      rejectIfBusy: true
     })
   });
   const data = await response.json().catch(() => ({}));
@@ -224,7 +226,7 @@ async function cloudflareWorkersAI(messages, options = {}) {
     const error = new Error('Cloudflare Workers AI request failed');
     error.status = response.status;
     error.provider = 'Cloudflare Workers AI';
-    error.providerMessage = String(data?.error?.message || data?.message || '').slice(0, 180);
+    error.providerMessage = String(typeof data?.error === 'string' ? data.error : data?.error?.message || data?.message || data?.errors?.[0]?.message || '').replace(/[\r\n]+/g, ' ').slice(0, 180);
     throw error;
   }
   const reply = data?.choices?.[0]?.message?.content?.trim();
@@ -488,6 +490,11 @@ app.post("/chat", async (req, res) => {
       .filter(x => x && ["user", "assistant"].includes(x.role) && typeof x.content === "string")
       .map(x => ({role:x.role,content:x.content.slice(0,2000)}));
     if (message.length > 6000) return res.status(400).json({error:"الرسالة طويلة جدًا"});
+    const greeting = message.toLowerCase().replace(/[\u064B-\u065F\u0670ـ]/g, '').replace(/[\s،,!.؟?؛;]+/g, ' ').trim();
+    if (/^(السلام عليكم|السلام|مرحبا|مرحباً|أهلا|اهلا|أهلًا|صباح الخير|مساء الخير|hello|hi|hey)( ورحمة الله وبركاته| ورحمة الله| يا رام| يا رامي)?$/.test(greeting)) {
+      const reply = /^(hello|hi|hey)$/.test(greeting) ? 'Hello! I’m here. What would you like to work on?' : 'وعليكم السلام ورحمة الله وبركاته، أهلًا بك. أنا معك—ما الذي نبدأ به؟';
+      return res.json({reply, response:reply, provider:'RAM', model:'instant-greeting', realSearch:false});
+    }
     // Search automatically when the request clearly asks for current web discovery.
     if (searchIntent(message)) {
       if (!process.env.SERPER_API_KEY && !process.env.TAVILY_API_KEY) return res.status(503).json({error:"خدمة البحث غير مفعلة في الخادم. لم يتم البحث ولن تُعرض فرص وهمية."});
@@ -527,13 +534,18 @@ app.post("/chat", async (req, res) => {
 
     return res.json({ reply, response: reply, model, provider, realSearch: false });
   } catch (error) {
-    console.error("RAM chat error:", error.provider || "AI", error.status || "unknown");
-    const message=error.status===429
-      ? "وصلت خدمة الذكاء الاصطناعي إلى حد الطلبات المجانية مؤقتًا. انتظر قليلًا ثم أعد المحاولة؛ لم يتم احتساب العمل كمنجز."
-      : error.provider==="AI" ? error.message : error.provider ? `تعذر الحصول على رد من ${error.provider}؛ تحقّق من المفتاح والحصة وإعداد النموذج.` : "تعذر الحصول على رد من RAM الآن؛ تحقّق من إعداد مزود الذكاء الاصطناعي.";
-    return res.status(error.status || 500).json({
-      error: message
-    });
+    console.error("RAM chat error:", error.provider || "AI", error.status || "unknown", error.providerMessage || "");
+    const timeoutError = error.name === "TimeoutError" || error.name === "AbortError";
+    const status = error.status || (timeoutError ? 504 : 500);
+    let message;
+    if (status === 429) message = "Cloudflare مشغول أو بلغ حد الاستخدام (HTTP 429). لم يُنفذ الطلب؛ أعد المحاولة بعد قليل.";
+    else if (status === 401 || status === 403) message = "Cloudflare رفض طلب RAM (HTTP " + status + "). راجع أن CLOUDFLARE_API_TOKEN يتضمن Workers AI Read وWorkers AI Edit، وأن خطة Workers مدفوعة أو يوجد رصيد AI Gateway.";
+    else if (status === 402) message = "Cloudflare يتطلب تفعيل خطة Workers مدفوعة أو رصيد AI Gateway لهذا النموذج.";
+    else if (status === 404) message = "Cloudflare لم يجد النموذج أو بوابة AI المحددة (HTTP 404). راجع CLOUDFLARE_AI_MODEL وCLOUDFLARE_AI_GATEWAY_ID.";
+    else if (error.name === "TimeoutError" || error.name === "AbortError") message = "انتهت مهلة Cloudflare بعد 12 ثانية. لم يصل رد؛ تحقق من الخطة والبوابة ثم أعد المحاولة.";
+    else message = error.provider ? `فشل اتصال ${error.provider} (HTTP ${status}). راجع إعدادات الخدمة في Railway.` : "تعذر الاتصال بخدمة RAM. تحقق من الإنترنت ورابط الخادم.";
+    if (error.providerMessage) message += " التفاصيل: " + error.providerMessage;
+    return res.status(status).json({error:message});
   }
 });
 
