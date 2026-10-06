@@ -201,10 +201,18 @@ async function cloudflareWorkersAI(messages, options = {}) {
   const gatewayId = String(process.env.CLOUDFLARE_AI_GATEWAY_ID || '').trim();
   const headers = {Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json'};
   if (gatewayId && gatewayId.toLowerCase() !== 'default') headers['cf-aig-gateway-id'] = gatewayId;
+  // GLM-4.7-Flash is a reasoning model. Keep its internal thinking disabled by
+  // default so a short chat response is not consumed by reasoning tokens.
+  // Enable it explicitly only when desired with CLOUDFLARE_ENABLE_THINKING=true.
   const requestOptions = {
-    max_tokens: options.maxOutputTokens || maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
+    max_completion_tokens: options.maxOutputTokens || maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
     temperature: options.temperature ?? 0.35
   };
+  if (model === '@cf/zai-org/glm-4.7-flash') {
+    requestOptions.chat_template_kwargs = {
+      enable_thinking: process.env.CLOUDFLARE_ENABLE_THINKING === 'true'
+    };
+  }
   const describeFailure = (response, rawBody) => {
     let data = {};
     try { data = rawBody ? JSON.parse(rawBody) : {}; } catch {}
@@ -645,3 +653,4 @@ app.post("/tts", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`RAM server running on port ${PORT}`));
+
