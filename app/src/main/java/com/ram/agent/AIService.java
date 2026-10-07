@@ -8,7 +8,7 @@ import java.net.*;
 import java.nio.charset.StandardCharsets;
 
 public class AIService {
-    public static final String SERVER = "https://ram-agent-production.up.railway.app";
+    public static final String SERVER = "https://ram-agent-production-33c2.up.railway.app";
     public interface AIResponseCallback { void onSuccess(String response); void onError(String error); }
 
     public void askAI(String userMessage, AIResponseCallback callback) {
