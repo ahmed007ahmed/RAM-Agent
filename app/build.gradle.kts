@@ -6,8 +6,8 @@ android {
   applicationId = "com.ram.agent.business"
   minSdk = 23
   targetSdk = 35
-  versionCode = 16
-  versionName = "1.15-chat-search"
+  versionCode = 17
+  versionName = "1.20-task-flow"
  }
 }
 dependencies { }
