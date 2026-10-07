@@ -1,12 +1,13 @@
 import express from "express";
 import {WorkflowStore} from "./workflow-store.js";
-import {validToken, maxOutputTokens, openRouterModels, rawSearchReply, cleanConversationalReply, createLimiter, extractAdvertisedPay, classifyFreelanceProject} from "./policy.js";
+import {cloudflareAiConfigured, cloudflareChat} from "./cloudflare-ai.js";
+import {n8nConfigured,notifyN8nOpportunity} from "./n8n.js";
+import {validToken, rawSearchReply, createLimiter, extractAdvertisedPay, classifyFreelanceProject} from "./policy.js";
 import {GMAIL_SCOPES, gmailConfigured, loadRefreshToken, makeOAuthState, makeRawEmail, safeMessage, saveRefreshToken, verifyOAuthState} from "./gmail.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const cloudWorkflow = new WorkflowStore(process.env.RAM_DATA_DIR === '/data' ? '/data' : '', {requireMount:true});
 await cloudWorkflow.init();
 
@@ -108,7 +109,7 @@ app.get('/gmail/oauth/start', (req, res) => {
   url.search = new URLSearchParams({client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: process.env.GMAIL_REDIRECT_URI, response_type: 'code', scope: GMAIL_SCOPES.join(' '), access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state}).toString();
   return res.json({ok: true, authorizationUrl: url.toString()});
 });
-app.post('/capabilities',(req,res)=>res.json({chatConfigured:Boolean((process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')||process.env.OPENROUTER_API_KEY||(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')),chatProviders:[(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')?'OpenAI API':'',process.env.OPENROUTER_API_KEY?'OpenRouter':'',(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')?'Gemini fallback':''].filter(Boolean),openAIConfigured:Boolean(process.env.OPENAI_API_KEY),openAIEnabled:process.env.ALLOW_OPENAI_API==='true',searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,makeSchedulerSupported:true,elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),gmailOAuthConfigured:gmailConfigured(),emailConnected:false,callsConnected:false,cloudJobsConnected:cloudWorkflow.enabled,cloudWorkerRunning:cloudWorkflow.enabled,cloudStoragePersistent:cloudWorkflow.enabled,singleReplicaRequired:true,paymentsEnabled:false,paidAiAllowed:false}));
+app.post('/capabilities',(req,res)=>res.json({chatConfigured:cloudflareAiConfigured(),chatProviders:cloudflareAiConfigured()?['Cloudflare AI']:[],cloudflareAiConfigured:cloudflareAiConfigured(),cloudflareModel:cloudflareAiConfigured()?(process.env.CLOUDFLARE_AI_MODEL||'@cf/meta/llama-3.1-8b-instruct'):null,n8nConfigured:n8nConfigured(),n8nStatus:n8nConfigured()?'configured_not_tested':'missing_configuration',searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),gmailOAuthConfigured:gmailConfigured(),emailConnected:false,callsConnected:false,cloudJobsConnected:cloudWorkflow.enabled,cloudWorkerRunning:cloudWorkflow.enabled,cloudStoragePersistent:cloudWorkflow.enabled,singleReplicaRequired:true,paymentsEnabled:false,paidAiAllowed:false}));
 app.post('/gmail/status', async (_req, res) => {
   try {
     if (!gmailConfigured()) return res.json({ok:true, connected:false, configured:false, email:null});
@@ -133,123 +134,31 @@ app.post('/gmail/send', async (req, res) => {
   try {
     if (req.body?.confirmed !== true) return res.status(400).json({error:'لم تُرسل الرسالة. أكد الإرسال من داخل رام بعد مراجعة المستلم والنص.'});
     const profile = await gmailApi('profile'); verifyGmailAccount(profile.emailAddress);
-    const raw = makeRawEmail({to:req.body?.to, subject:req.body?.subject, body:req.body?.body});
+    const raw = makeRawEmail({to:req.body?.to, subject:req.body?.subject, body:req.body?.body, attachments:req.body?.attachments || []});
     const sent = await gmailApi('messages/send', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({raw})});
     return res.json({ok:true, sent:true, id:String(sent.id || ''), threadId:String(sent.threadId || ''), to:String(req.body.to)});
   } catch (error) { return res.status(error.status || 400).json({error:error.message || 'تعذر إرسال الرسالة.'}); }
 });
 
-function getOpenRouterKey() {
-  const key = process.env.OPENROUTER_API_KEY;
-  if (!key) throw new Error("OPENROUTER_API_KEY is missing");
-  return key;
-}
-
-async function openRouter(messages, options = {}) {
-  const models=openRouterModels(process.env);
-  let lastError;
-  for(const model of models){
-    try{
-      const response = await fetch(OPENROUTER_URL, {
-        signal: AbortSignal.timeout(30000), method: "POST",
-        headers: {
-          Authorization: `Bearer ${getOpenRouterKey()}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": process.env.APP_URL || "https://ram-agent-production.up.railway.app",
-          "X-Title": "RAM Agent"
-        },
-        body: JSON.stringify({model,max_tokens:maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),messages,temperature:options.temperature??0.55})
-      });
-      const data=await response.json().catch(()=>({}));
-      if(!response.ok){const error=new Error("OpenRouter request failed");error.status=response.status;error.provider="OpenRouter";error.providerMessage=String(data?.error?.message||"").slice(0,180);throw error;}
-      const raw=data?.choices?.[0]?.message?.content;
-      const reply=cleanConversationalReply(typeof raw==='string'?raw:Array.isArray(raw)?raw.map(part=>part?.text||'').join('\n'):"");
-      if(!reply)throw Object.assign(new Error("Model returned no conversational text"),{status:503,provider:"OpenRouter"});
-      return {reply,model:data?.model||model,provider:"OpenRouter"};
-    }catch(error){lastError=error;console.error("RAM OpenRouter model unavailable:",model,error.status||error.name||"error");}
-  }
-  throw Object.assign(new Error("تعذر الحصول على رد حواري من نماذج OpenRouter المجانية. قد تكون الحصة أو الخدمة متوقفة مؤقتًا؛ لم يُحتسب أي عمل منجز."),{status:lastError?.status===429?429:503,provider:"AI"});
-}
-
-// Gemini fallback is opt-in because the provider may bill usage. Set
-// ALLOW_GEMINI_API=true only after checking the account's current plan.
-async function gemini(messages, options = {}) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw Object.assign(new Error("Gemini is not configured"), {code:"GEMINI_NOT_CONFIGURED"});
-  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-  const system = messages.find(x => x.role === "system")?.content;
-  const contents = messages.filter(x => x.role !== "system").map(x => ({
-    role: x.role === "assistant" ? "model" : "user",
-    parts: [{text:x.content}]
-  }));
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-    signal: AbortSignal.timeout(40000),
-    method: "POST",
-    headers: {"Content-Type":"application/json", "x-goog-api-key":apiKey},
-    body: JSON.stringify({
-      ...(system ? {systemInstruction:{parts:[{text:system}]}} : {}),
-      contents,
-      generationConfig:{temperature:options.temperature??0.35,maxOutputTokens:maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS)}
-    })
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    const error = new Error("Gemini request failed");
-    error.status = response.status;
-    error.provider = "Gemini";
-    error.providerMessage = String(data?.error?.message || "").slice(0, 180);
-    throw error;
-  }
-  const reply = cleanConversationalReply(data?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join(""));
-  if (!reply) throw Object.assign(new Error("Gemini returned an empty reply"),{status:503,provider:"Gemini"});
-  return {reply,model};
-}
-
-async function openAIResponses(messages, options = {}) {
-  const apiKey=process.env.OPENAI_API_KEY;
-  if(!apiKey||process.env.ALLOW_OPENAI_API!=='true')throw Object.assign(new Error('OpenAI API is not enabled'),{code:'OPENAI_NOT_ENABLED'});
-  const system=messages.find(x=>x.role==='system')?.content||'';
-  const input=messages.filter(x=>x.role!=='system').map(x=>({role:x.role,content:x.content}));
-  const response=await fetch('https://api.openai.com/v1/responses',{
-    signal:AbortSignal.timeout(40000),method:'POST',
-    headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},
-    body:JSON.stringify({model:process.env.OPENAI_MODEL||'gpt-5.4-mini',instructions:system,input,max_output_tokens:maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),store:false})
-  });
-  const data=await response.json();
-  if(!response.ok){const error=new Error('OpenAI Responses API request failed');error.status=response.status;error.provider='OpenAI API';throw error;}
-  const reply=cleanConversationalReply((data.output||[]).filter(item=>item.type==='message').flatMap(item=>item.content||[]).filter(item=>item.type==='output_text').map(item=>item.text||'').join('\n'));
-  if(!reply)throw Object.assign(new Error('OpenAI returned an empty response'),{status:503,provider:'OpenAI API'});
-  return {reply,model:data.model||process.env.OPENAI_MODEL||'gpt-5.4-mini',provider:'OpenAI API'};
-}
-
-async function answerWithFallback(messages, options = {}) {
-  if(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')return openAIResponses(messages,options);
-  try { return {...await openRouter(messages,options),provider:"OpenRouter"}; }
-  catch (primaryError) {
-    const geminiOptedIn=Boolean(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==="true");
-    if (geminiOptedIn && (!process.env.OPENROUTER_API_KEY || primaryError.status===429 || primaryError.status>=500 || primaryError.status===401 || primaryError.status===403)) {
-      try { return {...await gemini(messages,options),provider:"Gemini free tier"}; }
-      catch (fallbackError) {
-        console.error("RAM model providers unavailable:",primaryError.status||"error",fallbackError.status||"error");
-        throw Object.assign(new Error("تعذر رد النموذجين؛ قد يكون حد الطلبات المجانية قد انتهى أو يحتاج مفتاح Gemini مراجعة."),{status:(fallbackError.status===429||primaryError.status===429)?429:503, provider:"AI"});
-      }
-    }
-    throw primaryError;
-  }
+async function answerWithCloudflare(messages, options = {}) {
+  return cloudflareChat(messages, options);
 }
 
 async function generateCloudWorkflowDraft(job, kind) {
   const label = kind === 'plan' ? 'تقرير متطلبات وخطة' : kind === 'sample' ? 'عينة تحضيرية غير ملزمة قبل قبول العميل' : 'مسودة مخرج للعمل المتفق عليه';
   const system = `أنت رام، مساعد أعمال عربي عملي. أنشئ ${label} بالاعتماد على معلومات المهمة أدناه فقط. اكتب بالعربية الواضحة مع عناوين ونقاط عملية، واذكر بوضوح أي معلومات ناقصة أو افتراضات. لا تختلق بيانات العميل أو معايير المنصة أو تفاصيل غير موجودة. لا تدّع أنك سجلت حسابًا أو تواصلت أو سلمت عملًا أو قبضت مالًا. لا تكتب توقيعًا قانونيًا أو قبولًا نيابة عن المستخدم. عند إعداد عينة قبل الاتفاق، ضع تنبيهًا بأنها عينة فقط. عند إعداد مخرج بعد اتفاق المالك، أنجز ما يمكن داخل النص وحده، واذكر الملفات/الأدوات الخارجية التي لا يمكن إنتاجها هنا. لا تذكر بيانات الدفع أو معلومات شخصية.`;
   const user = `نوع المطلوب: ${label}\nالعنوان: ${job.title}\nالقسم: ${job.category}\nرابط المصدر: ${job.source}\nوصف الإعلان/المهمة: ${job.details}\nالعميل المذكور: ${job.client || 'غير معروف'}\nالمبلغ والعملة كما ظهرا: ${Number.isSafeInteger(job.amount) ? (job.amount / 100).toFixed(2) : 'غير معلن'} ${job.currency || ''}\nالموعد المذكور: ${job.deadline || 'غير محدد'}\nالاتفاق الذي أكده المالك: ${kind === 'deliverable' ? (job.agreement || 'لا يوجد اتفاق مسجل') : 'لم يُقبل عقد'}\n\n${kind === 'plan' ? 'رتب التقرير: ملخص الطلب، المتطلبات، المخرجات، ما يلزم التحقق منه، خطة تنفيذ مرحلية، أسئلة حاسمة للمالك، ومخاطر/نقاط لا يجوز افتراضها.' : kind === 'sample' ? 'جهز نموذجًا قصيرًا أو تصورًا أوليًا مناسبًا للتخصص، اعتمادًا على النص المتاح، مع قائمة المعلومات الناقصة.' : 'اكتب المخرج النصي المتفق عليه بأفضل صورة ممكنة ثم أضف فحص جودة قصيرًا وما يحتاج إلى مراجعة بشرية قبل التسليم.'}`;
-  const {reply, provider, model} = await answerWithFallback([{role:'system', content:system}, {role:'user', content:user}], {temperature:0.35});
+  const {reply, provider, model} = await answerWithCloudflare([{role:'system', content:system}, {role:'user', content:user}], {temperature:0.35});
   return {content:reply, provider, model};
 }
 
 app.post('/workflow/start', async (req, res) => {
   try {
     const job = await cloudWorkflow.start(req.body || {});
-    return res.json({ok:true, queued:true, job});
+    let n8n={configured:n8nConfigured(),triggered:false};
+    try { n8n=await notifyN8nOpportunity(req.body||{}); }
+    catch(error) { n8n={configured:true,triggered:false,error:error.message||'تعذر تشغيل Webhook في n8n.'}; }
+    return res.json({ok:true, queued:true, job, n8n});
   } catch (error) { return res.status(error.status || 500).json({error:error.message || 'تعذر حفظ المهمة السحابية.'}); }
 });
 app.post('/workflow/get', (req, res) => {
@@ -330,7 +239,7 @@ async function summarizeSearch(query, results) {
     `[${r.id}] ${r.title}\nURL: ${r.url}\n${r.snippet}`
   ).join("\n\n");
 
-  const { reply } = await answerWithFallback([
+  const { reply } = await answerWithCloudflare([
     {
       role: "system",
       content: `أنت RAM. أمامك نتائج بحث حقيقية من الويب لمشاريع عمل حر عن بُعد.
@@ -383,7 +292,7 @@ app.post("/search", async (req, res) => {
   }
 });
 
-// Scheduled Make.com scenarios can call this authenticated endpoint while the
+// Scheduled n8n workflows can call this authenticated endpoint while the
 // Android app is offline. It only searches public listings; it never applies,
 // registers, messages clients, or handles money.
 const automationSearchCategories={
@@ -437,7 +346,7 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-    const { reply, model, provider } = await answerWithFallback([
+    const { reply, model, provider } = await answerWithCloudflare([
       {
         role: "system",
         content: `أنت RAM (رام عشيش)، مساعد ذكاء اصطناعي شخصي ووكيل أعمال لأحمد عشيش.
@@ -467,8 +376,8 @@ app.post("/chat", async (req, res) => {
   } catch (error) {
     console.error("RAM chat error:", error.provider || "AI", error.status || "unknown");
     const message=error.status===429
-      ? "وصلت خدمة الذكاء الاصطناعي إلى حد الطلبات المجانية مؤقتًا. انتظر قليلًا ثم أعد المحاولة؛ لم يتم احتساب العمل كمنجز."
-      : error.provider==="AI" ? error.message : error.provider ? `تعذر الحصول على رد من ${error.provider}؛ تحقّق من المفتاح والحصة وإعداد النموذج.` : "تعذر الحصول على رد من RAM الآن؛ تحقّق من إعداد مزود الذكاء الاصطناعي.";
+      ? "بلغ Cloudflare AI حد الاستخدام أو السعة مؤقتًا. انتظر قليلًا ثم أعد المحاولة؛ لم يُسجل العمل كمنجز."
+      : error.provider==="Cloudflare AI" ? `تعذر رد Cloudflare AI: ${String(error.message||'تحقق من المفتاح والنموذج وحالة الحساب.').slice(0,220)}` : "تعذر الحصول على رد RAM الآن؛ تحقق من متغيرات Cloudflare AI في Railway.";
     return res.status(error.status || 500).json({
       error: message
     });
