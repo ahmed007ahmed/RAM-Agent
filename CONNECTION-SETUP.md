@@ -6,12 +6,12 @@ See [`docs/GMAIL-SETUP-AR.md`](docs/GMAIL-SETUP-AR.md) for Google Cloud and Rail
 
 ## Cloud task worker
 
-Follow [`CLOUD-WORKFLOW-AR-1.21.md`](CLOUD-WORKFLOW-AR-1.21.md). The worker stores task reports and drafts while the Android app is closed. It does not log into freelance platforms, sign contracts, deliver files, send payment claims, or move money. Use one server replica with the JSON volume store. This version does not send push notifications to a powered-off phone.
+Follow [`CLOUD-WORKFLOW-AR-1.22.md`](CLOUD-WORKFLOW-AR-1.22.md). The worker stores reports and prepares deliverable drafts while the Android app is closed. The owner opens the listing, registers and signs personally, then records the accepted scope in RAM. A text deliverable can be saved or sent as a Gmail attachment after review and confirmation. Platform upload remains manual. Use one server replica with the JSON volume store; notifications do not reach a powered-off phone.
 
 ## Android update continuity
 
-Business package: `com.ram.agent.business`. Version 1.21 sets versionCode 18 and versionName `1.21-cloud-worker`. Reuse the same permanent RAM Business signing key in GitHub Actions; do not generate or publish new signing material.
+Business package: `com.ram.agent.business`. Version 1.23 sets versionCode 20 and versionName `1.23-cloudflare-n8n-chat`. Reuse the same permanent RAM Business signing key in GitHub Actions; do not generate or publish new signing material.
 
 ## Remaining unimplemented business automation
 
-No marketplace login or proposal automation, file delivery, periodic inbox monitor, payment verification, or telephony connection is included. Search results are public listing links only. The owner reviews agreements, deliverables, sending claims, and receipt of funds.
+No marketplace login or automatic upload, background inbox monitor, payment verification, or telephony connection is included. Search results are public listing links only. The owner reviews agreements and deliverables; Gmail sending is available only after confirmation. The owner confirms receipt of funds. Chat uses Cloudflare Workers AI only; the n8n webhook is called after an opportunity is selected when the Railway URL and secret variables are present.
