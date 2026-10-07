@@ -1,6 +1,7 @@
 import express from "express";
 import {validToken, maxOutputTokens, checkedModel, rawSearchReply, createLimiter, extractAdvertisedPay, classifyFreelanceProject} from "./policy.js";
 import {GMAIL_SCOPES, gmailConfigured, loadRefreshToken, makeOAuthState, makeRawEmail, safeMessage, saveRefreshToken, verifyOAuthState} from "./gmail.js";
+import {automationStorageReady, newAutomationJob, publicAutomationStatus, readAutomationStore, writeAutomationStore} from "./cloud-automation.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -92,6 +93,8 @@ app.get("/", (req, res) => {
   });
 });
 
+app.get('/automation/control',(_req,res)=>res.type('html').send(`<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تشغيل رام السحابي</title><style>body{font:17px system-ui;background:#08101e;color:#eef4ff;max-width:760px;margin:24px auto;padding:16px}section{background:#141e32;border:1px solid #2a3a52;border-radius:18px;padding:18px;margin:14px 0}label{display:block;margin:12px 0}input,select,textarea{box-sizing:border-box;width:100%;padding:12px;border-radius:10px;border:1px solid #394a62;background:#0b1425;color:#fff;font:inherit}textarea{min-height:100px}button{padding:12px 18px;border:0;border-radius:10px;background:#55d6d2;color:#07121d;font:inherit;margin:6px;cursor:pointer}.muted{color:#aebbd0;white-space:pre-wrap;overflow-wrap:anywhere}.job{border-top:1px solid #394a62;padding-top:10px;margin-top:12px}small{color:#9dacc4}</style><h1>التشغيل السحابي في رام</h1><p class="muted">أدخل رمز رام والفرصة المرجعية المختارة مرة واحدة. يبقى الرمز في ذاكرة هذه الصفحة فقط ولا يُحفظ في التخزين المحلي.</p><section><label>رمز اتصال رام<input id="token" type="password" autocomplete="off" minlength="24"></label><label>عنوان الفرصة<input id="title" maxlength="240"></label><label>القسم<select id="category"><option value="TRANSLATION">الترجمة</option><option value="ENGINEERING">الهندسة والتصميم</option><option value="TECH">المواقع والبرمجة</option><option value="RESEARCH">الأبحاث والاستشارات</option><option value="LOGISTICS">الشحن</option><option value="ENERGY">النفط والغاز</option><option value="SOURCING">التوريد</option><option value="PROPERTY">العقارات والسياحة</option></select></label><label>رابط الإعلان<input id="source" type="url" maxlength="1000" placeholder="https://..."></label><label>التفاصيل والمهارات المطلوبة<textarea id="details" maxlength="4000"></textarea></label><label>فاصل البحث<select id="interval"><option value="60">كل ساعة</option><option value="30">كل 30 دقيقة</option><option value="15">كل 15 دقيقة</option><option value="180">كل 3 ساعات</option><option value="360">كل 6 ساعات</option></select></label><button id="enable">تفعيل/تحديث المرجع</button><button id="refresh">تحديث الحالة</button><button id="run">فحص الآن</button><button id="disable">إيقاف الجدول</button></section><section><h2>حالة العمل</h2><div id="status" class="muted">أدخل رمز رام واضغط تحديث الحالة.</div><div id="jobs"></div></section><script>(()=>{const $=id=>document.getElementById(id),status=$('status'),jobs=$('jobs');async function api(path,body={}){const token=$('token').value.trim();if(token.length<24)throw Error('أدخل رمز اتصال رام الصحيح.');const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||'فشل الطلب ('+r.status+')');return d;}function render(d){status.textContent=d.error||('الحالة: '+(d.enabled?'مفعّل':'متوقف')+'\nالتخزين الدائم: '+(d.durable?'متصل':'غير متصل')+'\nعدد الفرص المحفوظة: '+(d.jobCount||0)+'\nآخر فحص: '+(d.lastRunAt||'لم يبدأ'));jobs.replaceChildren();for(const j of d.jobs||[]){const box=document.createElement('article');box.className='job';const title=document.createElement('b');title.textContent=j.title||'فرصة';const state=document.createElement('p');state.textContent=j.status||'';const url=document.createElement('a');url.href=j.url;url.textContent=j.url;url.target='_blank';url.rel='noopener';box.append(title,state,url);if(j.analysis){const summary=document.createElement('p');summary.className='muted';summary.textContent=j.analysis.boundary||'';box.append(summary);const draft=document.createElement('details');const head=document.createElement('summary');head.textContent='عرض خطوات العمل ومسودة التواصل';const content=document.createElement('pre');content.className='muted';content.textContent=(j.analysis.nextSteps||[]).join('\n• ')+'\n\n'+(j.analysis.proposalDraft||'');draft.append(head,content);box.append(draft);}jobs.append(box);}}$('refresh').onclick=async()=>{try{render(await api('/automation/status'));}catch(e){status.textContent=e.message;}};$('enable').onclick=async()=>{try{const d=await api('/automation/configure',{seed:{title:$('title').value,category:$('category').value,details:$('details').value,source:$('source').value},intervalMinutes:Number($('interval').value)});status.textContent=d.message||'تم التفعيل';setTimeout(()=>$('refresh').click(),1200);}catch(e){status.textContent=e.message;}};$('run').onclick=async()=>{try{const d=await api('/automation/run-now');status.textContent=d.message||'بدأ الفحص';}catch(e){status.textContent=e.message;}};$('disable').onclick=async()=>{try{await api('/automation/disable');$('refresh').click();}catch(e){status.textContent=e.message;}};})();</script></html>`));
+
 const allowRequest = createLimiter();
 app.use((req,res,next)=>{
  if(!process.env.RAM_API_TOKEN||process.env.RAM_API_TOKEN.length<24)return res.status(503).json({error:"الخادم ينتظر إعداد رمز اتصال RAM_API_TOKEN آمن."});
@@ -111,7 +114,7 @@ app.get('/gmail/oauth/start', (req, res) => {
   url.search = new URLSearchParams({client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: process.env.GMAIL_REDIRECT_URI, response_type: 'code', scope: GMAIL_SCOPES.join(' '), access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state}).toString();
   return res.json({ok: true, authorizationUrl: url.toString()});
 });
-app.post('/capabilities',(req,res)=>res.json({chatConfigured:Boolean((process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN)||(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')||process.env.OPENROUTER_API_KEY||(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')),chatProviders:[(process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN)?'Cloudflare Workers AI':'',(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')?'OpenAI API':'',process.env.OPENROUTER_API_KEY?'OpenRouter':'',(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')?'Gemini fallback':''].filter(Boolean),cloudflareConfigured:Boolean(process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN),openAIConfigured:Boolean(process.env.OPENAI_API_KEY),openAIEnabled:process.env.ALLOW_OPENAI_API==='true',searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,makeSchedulerSupported:true,n8nConnected:n8nWebhookConfigured(),elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),gmailOAuthConfigured:gmailConfigured(),emailConnected:false,callsConnected:false,cloudJobsConnected:false,paymentsEnabled:false,paidAiAllowed:false}));
+app.post('/capabilities',(req,res)=>res.json({chatConfigured:Boolean((process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN)||(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')||process.env.OPENROUTER_API_KEY||(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')),chatProviders:[(process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN)?'Cloudflare Workers AI':'',(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')?'OpenAI API':'',process.env.OPENROUTER_API_KEY?'OpenRouter':'',(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')?'Gemini fallback':''].filter(Boolean),cloudflareConfigured:Boolean(process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN),openAIConfigured:Boolean(process.env.OPENAI_API_KEY),openAIEnabled:process.env.ALLOW_OPENAI_API==='true',searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,makeSchedulerSupported:true,n8nConnected:n8nWebhookConfigured(),elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),gmailOAuthConfigured:gmailConfigured(),emailConnected:false,callsConnected:false,cloudJobsConnected:automationStorageReady(),paymentsEnabled:false,paidAiAllowed:false}));
 app.post('/integrations/n8n/test', async (req,res) => {
   if (req.body?.confirmed !== true) return res.status(400).json({error:'أكد اختبار الاتصال من داخل رام أولًا.'});
   const webhook = String(process.env.N8N_WEBHOOK_URL || '').trim();
@@ -194,113 +197,86 @@ async function cloudflareWorkersAI(messages, options = {}) {
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
   if (!accountId || !apiToken) throw Object.assign(new Error('Cloudflare Workers AI is not configured'), {code:'CLOUDFLARE_NOT_CONFIGURED'});
   if (!/^[a-f0-9]{32}$/i.test(accountId)) throw Object.assign(new Error('CLOUDFLARE_ACCOUNT_ID must be the 32-character Account ID.'), {code:'CLOUDFLARE_ACCOUNT_ID_INVALID'});
-  // GLM-4.7-Flash is optimized for multilingual dialogue and multi-turn
-  // instruction following. Do not invent an AI Gateway ID: the direct Workers
-  // AI endpoint works without the gateway header.
+  // Match Cloudflare's model-specific REST example first. This avoids the
+  // compatibility route that returned HTTP 200 without a chat choice.
   const model = String(process.env.CLOUDFLARE_AI_MODEL || '@cf/zai-org/glm-4.7-flash').trim();
-  const gatewayId = String(process.env.CLOUDFLARE_AI_GATEWAY_ID || '').trim();
   const headers = {Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json'};
-  if (gatewayId && gatewayId.toLowerCase() !== 'default') headers['cf-aig-gateway-id'] = gatewayId;
-  // GLM-4.7-Flash is a reasoning model. Keep its internal thinking disabled by
-  // default so a short chat response is not consumed by reasoning tokens.
-  // Enable it explicitly only when desired with CLOUDFLARE_ENABLE_THINKING=true.
-  const requestOptions = {
-    max_completion_tokens: options.maxOutputTokens || maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS),
-    temperature: options.temperature ?? 0.35
-  };
-  if (model === '@cf/zai-org/glm-4.7-flash') {
-    requestOptions.chat_template_kwargs = {
-      enable_thinking: process.env.CLOUDFLARE_ENABLE_THINKING === 'true'
-    };
-  }
-  const describeFailure = (response, rawBody) => {
-    let data = {};
-    try { data = rawBody ? JSON.parse(rawBody) : {}; } catch {}
-    const apiError = Array.isArray(data?.errors) ? data.errors[0] : null;
-    const plainBody = rawBody.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]*>/g, ' ').replace(/&nbsp;|&#160;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/\s+/g, ' ').trim();
-    return {
-      status: response.status,
-      providerCode: apiError?.code ?? data?.error?.code ?? data?.code ?? null,
-      providerMessage: String(apiError?.message || data?.error?.message || data?.message || plainBody || response.statusText || '').slice(0, 240),
-      cfRay: String(response.headers.get('cf-ray') || '').slice(0, 40),
-      contentType: String(response.headers.get('content-type') || '').slice(0, 80)
-    };
-  };
-  let chatFailure = null;
-  try {
-    const url = `${CLOUDFLARE_CHAT_URL}/${encodeURIComponent(accountId)}/ai/v1/chat/completions`;
-    const requestBody = JSON.stringify({
-      model,
-      messages,
-      ...requestOptions
-    });
-    let response;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      response = await fetch(url, {signal:AbortSignal.timeout(45000), method:'POST', headers, body:requestBody});
-      if (response.status !== 503 || attempt === 1) break;
-      console.warn('Cloudflare Workers AI returned HTTP 503; retrying once');
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
+  const parseBody = async response => {
     const rawBody = await response.text().catch(() => '');
     let data = {};
     try { data = rawBody ? JSON.parse(rawBody) : {}; } catch {}
-    if (response.ok) {
-      const reply = data?.choices?.[0]?.message?.content?.trim();
-      if (reply) return {reply, model:data?.model || model, provider:'Cloudflare Workers AI'};
-      chatFailure = {status:503, providerCode:'EMPTY_CHAT_COMPLETION', providerMessage:`Chat Completions returned HTTP ${response.status} without choices.message.content; body: ${rawBody.slice(0, 180)}`, cfRay:String(response.headers.get('cf-ray') || '').slice(0, 40), contentType:String(response.headers.get('content-type') || '').slice(0, 80)};
-      console.warn('Cloudflare Chat Completions returned an empty reply; trying native Workers AI REST endpoint');
-    } else {
-      chatFailure = describeFailure(response, rawBody);
-      if (response.status !== 503) {
-        const error = new Error('Cloudflare Workers AI request failed');
-        Object.assign(error, chatFailure, {provider:'Cloudflare Workers AI', model});
-        throw error;
+    const apiError = Array.isArray(data?.errors) ? data.errors[0] : null;
+    return {
+      data,
+      detail: {
+        status: response.status,
+        contentType: String(response.headers.get('content-type') || '').slice(0, 80),
+        cfRay: String(response.headers.get('cf-ray') || '').slice(0, 40),
+        responseKeys: data && typeof data === 'object' ? Object.keys(data).slice(0, 12).join(',') : typeof data,
+        choiceCount: Array.isArray(data?.choices) ? data.choices.length : null,
+        providerCode: apiError?.code ?? data?.error?.code ?? data?.code ?? null,
+        providerMessage: String(apiError?.message || data?.error?.message || data?.message || '').replace(/[\r\n\t]/g, ' ').replace(/Bearer\s+\S+/gi, 'Bearer [hidden]').slice(0, 220)
       }
-      console.warn('Cloudflare Chat Completions returned HTTP 503; trying native Workers AI REST endpoint');
-    }
-  } catch (cause) {
-    if (cause?.provider === 'Cloudflare Workers AI') throw cause;
-    const timeout = cause?.name === 'TimeoutError' || cause?.name === 'AbortError';
-    chatFailure = {status:timeout ? 504 : 502, providerMessage:timeout ? 'Chat Completions request timed out after 45 seconds' : String(cause?.cause?.code || cause?.message || 'network error').slice(0, 120)};
-    console.warn('Cloudflare Chat Completions failed; trying native Workers AI REST endpoint:', chatFailure.providerMessage);
-  }
-  // Call the native Workers AI endpoint too. The Playground uses the Workers AI
-  // runtime directly; this fallback avoids depending only on the compatibility
-  // layer and accepts its native { response: "..." } result shape.
-  let nativeResponse;
-  let nativeRawBody = '';
+    };
+  };
+  const getText = value => {
+    if (typeof value === 'string') return value.trim();
+    if (Array.isArray(value)) return value.map(part => typeof part === 'string' ? part : (part?.text || part?.content || '')).join('').trim();
+    return '';
+  };
+  const timeoutStatus = error => error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 504 : 502;
+  let nativeFailure;
   try {
     const nativeUrl = `${CLOUDFLARE_CHAT_URL}/${encodeURIComponent(accountId)}/ai/run/${model}`;
-    nativeResponse = await fetch(nativeUrl, {
+    const response = await fetch(nativeUrl, {
       signal:AbortSignal.timeout(45000), method:'POST', headers,
-      body:JSON.stringify({messages, ...requestOptions})
+      // Cloudflare's published GLM-4.7-Flash REST example uses messages only.
+      body:JSON.stringify({messages})
     });
-    nativeRawBody = await nativeResponse.text().catch(() => '');
+    const parsed = await parseBody(response);
+    if (response.ok) {
+      const reply = getText(parsed.data?.response)
+        || getText(parsed.data?.result?.response)
+        || getText(parsed.data?.result?.generated_text)
+        || getText(parsed.data?.choices?.[0]?.message?.content);
+      if (reply) return {reply, model, provider:'Cloudflare Workers AI'};
+    }
+    nativeFailure = parsed.detail;
+    if (!response.ok && [400, 401, 403, 404, 410].includes(response.status)) {
+      throw Object.assign(new Error('Cloudflare native Workers AI endpoint rejected the request'), {status:response.status, provider:'Cloudflare Workers AI', model, ...nativeFailure});
+    }
+    console.warn(`Cloudflare native ai/run did not return text (HTTP ${response.status}); trying Chat Completions`);
   } catch (cause) {
-    const timeout = cause?.name === 'TimeoutError' || cause?.name === 'AbortError';
-    throw Object.assign(new Error('Cloudflare Workers AI native REST request failed'), {
-      status:timeout ? 504 : 502, provider:'Cloudflare Workers AI', model,
-      providerMessage:`Chat Completions: ${chatFailure?.providerMessage || `HTTP ${chatFailure?.status || 'unknown'}`}; native REST: ${timeout ? '45-second request timeout' : String(cause?.cause?.code || cause?.message || 'network error').slice(0, 120)}`,
-      providerCode:chatFailure?.providerCode || null, cfRay:chatFailure?.cfRay || ''
+    if (cause?.provider === 'Cloudflare Workers AI') throw cause;
+    nativeFailure = {status:timeoutStatus(cause), providerMessage:String(cause?.cause?.code || cause?.message || 'network error').slice(0, 180)};
+    console.warn('Cloudflare native ai/run failed; trying Chat Completions:', nativeFailure.providerMessage);
+  }
+  let chatFailure;
+  try {
+    const chatUrl = `${CLOUDFLARE_CHAT_URL}/${encodeURIComponent(accountId)}/ai/v1/chat/completions`;
+    const response = await fetch(chatUrl, {
+      signal:AbortSignal.timeout(45000), method:'POST', headers,
+      body:JSON.stringify({model, messages, max_completion_tokens:options.maxOutputTokens || maxOutputTokens(process.env.AI_MAX_OUTPUT_TOKENS), temperature:options.temperature ?? 0.35, stream:false})
     });
+    const parsed = await parseBody(response);
+    if (response.ok) {
+      const reply = getText(parsed.data?.choices?.[0]?.message?.content)
+        || getText(parsed.data?.choices?.[0]?.text);
+      if (reply) return {reply, model:parsed.data?.model || model, provider:'Cloudflare Workers AI'};
+    }
+    chatFailure = parsed.detail;
+  } catch (cause) {
+    chatFailure = {status:timeoutStatus(cause), providerMessage:String(cause?.cause?.code || cause?.message || 'network error').slice(0, 180)};
   }
-  let nativeData = {};
-  try { nativeData = nativeRawBody ? JSON.parse(nativeRawBody) : {}; } catch {}
-  if (nativeResponse.ok) {
-    const nativeReply = typeof nativeData?.response === 'string'
-      ? nativeData.response.trim()
-      : (typeof nativeData?.result?.response === 'string' ? nativeData.result.response.trim() : '');
-    if (nativeReply) return {reply:nativeReply, model, provider:'Cloudflare Workers AI'};
-  }
-  const nativeFailure = describeFailure(nativeResponse, nativeRawBody);
-  const error = new Error('Cloudflare Workers AI request failed through both supported endpoints');
-  error.status = nativeResponse.ok ? 503 : nativeResponse.status;
+  const error = new Error('Cloudflare Workers AI returned no usable text from either supported endpoint');
+  error.status = chatFailure?.status || nativeFailure?.status || 503;
+  if (error.status < 400) error.status = 503;
   error.provider = 'Cloudflare Workers AI';
   error.model = model;
-  error.providerCode = nativeFailure.providerCode || chatFailure?.providerCode || null;
-  error.providerMessage = `Chat Completions HTTP ${chatFailure?.status || 'unknown'}${chatFailure?.providerCode ? ` code ${chatFailure.providerCode}` : ''}: ${chatFailure?.providerMessage || 'no response details'}; native REST HTTP ${nativeFailure.status}${nativeFailure.providerCode ? ` code ${nativeFailure.providerCode}` : ''}: ${nativeFailure.providerMessage || 'no response details'}`.slice(0, 420);
-  error.cfRay = nativeFailure.cfRay || chatFailure?.cfRay || '';
-  error.contentType = nativeFailure.contentType || chatFailure?.contentType || '';
+  error.providerCode = nativeFailure?.providerCode || chatFailure?.providerCode || null;
+  error.providerMessage = `ai/run HTTP ${nativeFailure?.status ?? 'unknown'}${nativeFailure?.providerCode ? ` code ${nativeFailure.providerCode}` : ''}${nativeFailure?.providerMessage ? `: ${nativeFailure.providerMessage}` : ` (keys: ${nativeFailure?.responseKeys || 'none'})`}; Chat Completions HTTP ${chatFailure?.status ?? 'unknown'}${chatFailure?.providerCode ? ` code ${chatFailure.providerCode}` : ''}${chatFailure?.providerMessage ? `: ${chatFailure.providerMessage}` : ` (keys: ${chatFailure?.responseKeys || 'none'}, choices: ${chatFailure?.choiceCount ?? 'none'})`}`.slice(0, 600);
+  error.cfRay = nativeFailure?.cfRay || chatFailure?.cfRay || '';
+  error.contentType = nativeFailure?.contentType || chatFailure?.contentType || '';
   throw error;
 }
 
@@ -551,6 +527,80 @@ app.post('/automation/search',async(req,res)=>{
   return res.json({ok:failures.length===0,realSearch:true,resultType:'REMOTE_FREELANCE_PROJECT',generatedAt:new Date().toISOString(),results:unique,counts,failures});
 });
 
+// Cloud autopilot. Railway must attach a persistent volume; the phone is not
+// involved once this schedule has been enabled. It searches and prepares
+// evidence-based work packets, but does not submit bids or claim delivery.
+const automationStopWords=new Set(['the','and','for','with','from','that','this','project','work','need','looking','job','طلب','عمل','مشروع','مطلوب','محتاج','اريد','على','في','من','عن','مع','الى','هذا','هذه','للعمل','مستقل','عن','بعد']);
+function automationTokens(text){return [...new Set(String(text||'').toLowerCase().normalize('NFKC').match(/[a-z0-9]{3,}|[\u0600-\u06ff]{3,}/g)||[])].filter(x=>!automationStopWords.has(x)).slice(0,40);}
+function similarityScore(seed,result){const expected=automationTokens(`${seed.title} ${seed.details}`), actual=new Set(automationTokens(`${result.title} ${result.snippet}`));if(!expected.length)return 0;const shared=expected.filter(x=>actual.has(x)).length;return shared/Math.min(expected.length,8);}
+function canonicalAutomationUrl(value){try{const u=new URL(value);u.hash='';for(const key of [...u.searchParams.keys()])if(/^utm_|^ref$|^source$|^campaign$/i.test(key))u.searchParams.delete(key);u.pathname=u.pathname.replace(/\/+$/,'')||'/';return u.toString();}catch{return String(value||'');}}
+function prepareOpportunityPacket(seed,result,score){
+ const pay=result.amountCents?`${(result.amountCents/100).toLocaleString('en-US')} ${result.currency}${result.basis==='HOURLY'?' per hour':''}`:'No price was verified in the search excerpt';
+ const facts=String(result.snippet||'').trim().slice(0,3000);
+ return {matchScore:Number(score.toFixed(3)),sourceFacts:facts,priceEvidence:pay,
+  nextSteps:['Open the original listing and verify that it is still active.','Read the complete requirements, eligibility, budget, deadline, and platform rules.','Prepare a scope-specific delivery plan and estimate from verified requirements.','Submit a proposal or deliver work only through an explicitly connected platform workflow.'],
+  proposalDraft:`Hello,\n\nI reviewed your listing: “${String(result.title||'').slice(0,180)}”. I can help with the scope described in the listing. Before confirming a price or delivery date, I would like to verify the complete requirements, acceptance criteria, and timeline on the original platform.\n\nRelevant listing: ${result.url}\n\nRegards,\nEnjaz Holding`,
+  boundary:'Prepared automatically from a public search result. The full listing, client identity, contract, budget, and deliverable have not yet been verified; no proposal was sent and no work was represented as completed.'};
+}
+let automationCycleRunning=false;
+async function runCloudAutomationCycle(force=false){
+ if(automationCycleRunning||!automationStorageReady()||(!process.env.SERPER_API_KEY&&!process.env.TAVILY_API_KEY))return;
+ automationCycleRunning=true;
+ try{
+  let store=await readAutomationStore();
+  if(!store.enabled||!store.config)return;
+  const interval=Math.max(15,Math.min(1440,Number(store.config.intervalMinutes)||60));
+  if(!force&&store.lastRunAt&&Date.now()-Date.parse(store.lastRunAt)<interval*60000)return;
+  store.lastRunAt=new Date().toISOString();store.nextRunAt=new Date(Date.now()+interval*60000).toISOString();store.lastError=null;
+  await writeAutomationStore(store);
+  const seed=store.config.seed, category=seed.category, configVersion=store.config.enabledAt;
+  if(!Object.hasOwn(automationSearchCategories,category))throw new Error('قسم البحث غير معروف');
+  const searchTerms=automationTokens(`${seed.title} ${seed.details}`).slice(0,8).join(' ');
+  const query=[automationSearchCategories[category],searchTerms].filter(Boolean).join(' ');
+  const found=await webSearch(query,8);
+  const eligible=found.map(item=>({...item,...classifyFreelanceProject(item),category,query}))
+   .filter(item=>item.eligible&&canonicalAutomationUrl(item.url)!==canonicalAutomationUrl(seed.source))
+   .map(item=>({...item,matchScore:similarityScore(seed,item)}))
+   .filter(item=>item.matchScore>=0.125)
+   .sort((a,b)=>b.matchScore-a.matchScore).slice(0,6);
+  store=await readAutomationStore();
+  if(!store.enabled||store.config?.enabledAt!==configVersion)return;
+  const seen=new Set(store.jobs.map(job=>canonicalAutomationUrl(job.url)));let addedCount=0;
+  for(const result of eligible){
+   const canonical=canonicalAutomationUrl(result.url);if(seen.has(canonical))continue;
+   const packet=prepareOpportunityPacket(seed,result,result.matchScore);
+   store.jobs.unshift(newAutomationJob({title:String(result.title||'').slice(0,240),url:result.url,category,source:'web-search',status:'PREPARED_REVIEW_REQUIRED',analysis:packet,amountCents:result.amountCents??null,currency:result.currency??null,basis:result.basis??null,seedTitle:seed.title}));
+   seen.add(canonical);addedCount++;
+  }
+  store.jobs=store.jobs.slice(0,500);
+  store.events.unshift({at:new Date().toISOString(),type:'search_cycle',found:eligible.length,added:addedCount});
+  store.events=store.events.slice(0,200);
+  await writeAutomationStore(store);
+ }catch(error){
+  try{const store=await readAutomationStore();store.lastError=String(error?.code==='SEARCH_NOT_CONFIGURED'?'البحث غير مهيأ':error?.message||'فشل الفحص').slice(0,300);store.events.unshift({at:new Date().toISOString(),type:'cycle_error',message:store.lastError});store.events=store.events.slice(0,200);await writeAutomationStore(store);}catch{}
+  console.error('RAM cloud automation cycle failed:',error?.status||error?.code||error?.name||'unknown');
+ }finally{automationCycleRunning=false;}
+}
+app.post('/automation/status',async(_req,res)=>{
+ try{return res.json(publicAutomationStatus(await readAutomationStore()));}
+ catch{return res.status(500).json({error:'تعذر قراءة سجل الأتمتة السحابي.'});}
+});
+app.post('/automation/configure',async(req,res)=>{
+ if(!automationStorageReady())return res.status(503).json({error:'اربط Railway Volume بالخدمة أولًا واجعل مسار التركيب /app/data؛ من دونه لا يوجد حفظ دائم بعد إعادة النشر.'});
+ if(!process.env.SERPER_API_KEY&&!process.env.TAVILY_API_KEY)return res.status(503).json({error:'أضف SERPER_API_KEY أو TAVILY_API_KEY في Railway قبل تشغيل البحث المجدول.'});
+ const incoming=req.body?.seed&&typeof req.body.seed==='object'?req.body.seed:{};
+ const seed={title:String(incoming.title||'').trim().slice(0,240),category:String(incoming.category||''),details:String(incoming.details||'').trim().slice(0,4000),source:String(incoming.source||'').trim().slice(0,1000)};
+ if(!seed.title||!seed.details||!Object.hasOwn(automationSearchCategories,seed.category))return res.status(400).json({error:'اختر فرصة محفوظة تتضمن عنوانًا وتفاصيل وقسمًا واضحًا أولًا.'});
+ try{new URL(seed.source);if(!/^https?:$/.test(new URL(seed.source).protocol))throw Error();}catch{return res.status(400).json({error:'رابط الفرصة المرجعية غير صالح.'});}
+ const intervalMinutes=Math.max(15,Math.min(1440,Number(req.body?.intervalMinutes)||60));
+ const store=await readAutomationStore();store.enabled=true;store.config={seed,intervalMinutes,enabledAt:new Date().toISOString()};store.lastError=null;store.nextRunAt=new Date().toISOString();
+ await writeAutomationStore(store);void runCloudAutomationCycle(true);
+ return res.json({ok:true,enabled:true,intervalMinutes,message:'بدأ الفحص السحابي. سيواصل الخادم العمل والهاتف مغلق.'});
+});
+app.post('/automation/disable',async(_req,res)=>{try{const store=await readAutomationStore();store.enabled=false;store.nextRunAt=null;await writeAutomationStore(store);return res.json({ok:true,enabled:false});}catch{return res.status(500).json({error:'تعذر إيقاف الأتمتة.'});}});
+app.post('/automation/run-now',async(_req,res)=>{try{const store=await readAutomationStore();if(!store.enabled)return res.status(409).json({error:'فعّل الفحص السحابي باختيار فرصة مرجعية أولًا.'});void runCloudAutomationCycle(true);return res.json({ok:true,queued:true,message:'بدأ فحص جديد في الخادم.'});}catch{return res.status(500).json({error:'تعذر بدء الفحص الآن.'});}});
+setInterval(()=>{void runCloudAutomationCycle(false);},60000).unref();
+
 app.post("/chat", async (req, res) => {
   try {
     const message = String(req.body?.message || "").trim();
@@ -587,7 +637,7 @@ app.post("/chat", async (req, res) => {
 
     return res.json({ reply, response: reply, model, provider, realSearch: false });
   } catch (error) {
-    const diagnosticMessage=String(error.providerMessage||'').replace(/[\r\n\t]/g,' ').replace(/Bearer\s+\S+/gi,'Bearer [hidden]').replace(/(?:api[_ -]?key|token)\s*[:=]\s*\S+/gi,'credential=[hidden]').slice(0,180);
+    const diagnosticMessage=String(error.providerMessage||'').replace(/[\r\n\t]/g,' ').replace(/Bearer\s+\S+/gi,'Bearer [hidden]').replace(/(?:api[_ -]?key|token)\s*[:=]\s*\S+/gi,'credential=[hidden]').slice(0,600);
     console.error("RAM chat error:", error.provider || "AI", error.status || "unknown", error.model || process.env.CLOUDFLARE_AI_MODEL || "default-model", error.providerCode || "", diagnosticMessage, error.cfRay || "");
     const message=error.status===429
       ? "وصلت خدمة الذكاء الاصطناعي إلى حد الطلبات المجانية مؤقتًا. انتظر قليلًا ثم أعد المحاولة؛ لم يتم احتساب العمل كمنجز."
@@ -653,4 +703,3 @@ app.post("/tts", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`RAM server running on port ${PORT}`));
-
