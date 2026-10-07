@@ -23,7 +23,7 @@ const freelanceSignals = /\b(?:freelanc(?:e|er|ing)|fixed[ -]price|project[ -]ba
 const remoteSignals = /\b(?:remote|work from home|work from anywhere|online project|fully remote|remote contract)\b|عن بعد|من المنزل|عمل إلكتروني|عبر الإنترنت/i;
 const employmentSignals = /\b(?:full[ -]?time|part[ -]?time|permanent employee|employee position|job vacancy|job opening|employment opportunity|career opportunity|monthly salary|onsite|on[ -]site|hybrid role|visa sponsorship|staff position)\b|وظيفة شاغرة|دوام كامل|دوام جزئي|راتب شهري|توظيف موظف|مقر الشركة/i;
 const sellerOfferSignals = /\b(?:hello[,! ]+)?(?:i can|we can) (?:help|support|design|create|provide|deliver|draw|draft|translate|build)|\b(?:hire me|my services|our services|my portfolio|services include|i offer|we offer|i am a freelancer|professional freelancer|available for freelance work)\b|أستطيع مساعدتك|أقدم خدمات|خدماتنا|خدماتي|مصمم مستقل|مستقل محترف/i;
-const genericListingSignals = /\b(?:browse\s+[\d,]+\s+(?:open\s+)?jobs|open jobs and land|jobs today|freelance jobs\s*:\s*work remote|earn online|job listings|remote jobs|freelance jobs)\b|تصفح\s+(?:الوظائف|الفرص)|قائمة\s+وظائف/i;
+const genericListingSignals = /\b(?:browse\s+[\d,]+\s+(?:open\s+)?jobs|open jobs and land|jobs today|freelance jobs\s*:\s*work remote|earn online|job listings|remote jobs|browse\s+freelance\s+jobs|freelance job listings|remote employment)\b|تصفح\s+(?:الوظائف|الفرص)|قائمة\s+وظائف/i;
 function isMarketplaceProjectUrl(url,host) {
  let path='';try{path=new URL(url).pathname.toLowerCase();}catch{return false;}
  if(/\/(?:u|user|users|profile|profiles|freelancer|freelancers|seller|sellers|service|services|gig|gigs|portfolio|hourlie)(?:\/|$)/i.test(path))return false;
@@ -47,7 +47,7 @@ export function classifyFreelanceProject({title='',url='',snippet=''}={}) {
  // project. Only reject on explicit employment wording in the result title or
  // URL; snippet text is noisy and should not erase a real project listing.
  const employment=employmentSignals.test(`${title}\n${url}`);
- const genericListing=!marketplaceProject&&genericListingSignals.test(`${title}\n${snippet}`);
+ const genericListing=genericListingSignals.test(`${title}\n${snippet}`);
  const sellerOffer=sellerOfferSignals.test(text);
  const project=freelanceSignals.test(text)||marketplaceProject;
  const remote=remoteSignals.test(text)||marketplaceProject;
