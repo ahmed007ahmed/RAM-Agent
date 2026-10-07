@@ -6,8 +6,8 @@ android {
   applicationId = "com.ram.agent.business"
   minSdk = 23
   targetSdk = 35
-  versionCode = 18
-  versionName = "1.21-cloud-worker"
+  versionCode = 20
+  versionName = "1.23-cloudflare-n8n-chat"
  }
 }
 dependencies { }
