@@ -10,20 +10,34 @@ export function checkedModel(env) {
  if(!model.endsWith(':free')&&(env.ALLOW_PAID_AI!=='true'||!env.RAM_API_TOKEN||env.RAM_API_TOKEN.length<24))throw Object.assign(new Error('Paid AI disabled; configure authentication and provider spending limits first'),{status:503});
  return model;
 }
+// Try the configured model first, then another available free model if it is
+// throttled. Paid fallbacks are never added implicitly.
+export function openRouterModels(env) {
+ const primary=checkedModel(env);
+ const configured=(env.OPENROUTER_FALLBACK_MODELS||'openrouter/free').split(',').map(x=>x.trim()).filter(Boolean);
+ return [...new Set([primary,...configured.filter(x=>x==='openrouter/free'||x.endsWith(':free'))])].slice(0,4);
+}
 export function rawSearchReply(results) {
  if(!results.length)return 'لم يُرجع محرك البحث نتائج لهذا الطلب.';
  return 'هذه نتائج بحث فعلية؛ تعذر تلخيصها بالنموذج الآن. تحقّق من صلاحية الإعلان والميزانية في المصدر قبل اختيار العمل.\n\n'+results.map((r,i)=>`${i+1}. ${r.title}\n${r.snippet}\n${r.url}`).join('\n\n');
 }
 
+// Some gateway/model combinations accidentally expose moderation labels as if
+// they were the assistant's answer. Never show those internal labels to RAM users.
+export function cleanConversationalReply(value) {
+ const lines=String(value||'').split(/\r?\n/).filter(line=>!/^\s*(?:user|content|response)\s+safety\s*:\s*(?:safe|unsafe)\s*$/i.test(line));
+ return lines.join('\n').replace(/\n{3,}/g,'\n\n').trim();
+}
+
 // Keep ordinary vacancies out of RAM's paid, remote freelance project feed.
 // We only accept clear project/freelance wording or a known freelance
 // marketplace URL, and reject employee-style positions even if they say remote.
-const freelanceMarketplaces = /(?:^|\.)(?:upwork\.com|fiverr\.com|freelancer\.com|guru\.com|peopleperhour\.com|toptal\.com|ureed\.com|mostaql\.com|khamsat\.com|truelancer\.com)$/i;
+const freelanceMarketplaces = /(?:^|\.)(?:upwork\.com|fiverr\.com|freelancer\.com|guru\.com|peopleperhour\.com|proz\.com|toptal\.com|ureed\.com|mostaql\.com|khamsat\.com|truelancer\.com)$/i;
 const freelanceSignals = /\b(?:freelanc(?:e|er|ing)|fixed[ -]price|project[ -]based|client project|project budget|submit (?:a )?proposal|gig|independent contractor|paid project|commission[- ]based)\b|مشروع مستقل|عمل حر|عمل مستقل|ميزانية المشروع|سعر ثابت|عمولة معلنة/i;
 const remoteSignals = /\b(?:remote|work from home|work from anywhere|online project|fully remote|remote contract)\b|عن بعد|من المنزل|عمل إلكتروني|عبر الإنترنت/i;
 const employmentSignals = /\b(?:full[ -]?time|part[ -]?time|permanent employee|employee position|job vacancy|job opening|employment opportunity|career opportunity|monthly salary|onsite|on[ -]site|hybrid role|visa sponsorship|staff position)\b|وظيفة شاغرة|دوام كامل|دوام جزئي|راتب شهري|توظيف موظف|مقر الشركة/i;
 const sellerOfferSignals = /\b(?:hello[,! ]+)?(?:i can|we can) (?:help|support|design|create|provide|deliver|draw|draft|translate|build)|\b(?:hire me|my services|our services|my portfolio|services include|i offer|we offer|i am a freelancer|professional freelancer|available for freelance work)\b|أستطيع مساعدتك|أقدم خدمات|خدماتنا|خدماتي|مصمم مستقل|مستقل محترف/i;
-const genericListingSignals = /\b(?:browse\s+[\d,]+\s+(?:open\s+)?jobs|open jobs and land|jobs today|freelance jobs\s*:\s*work remote|earn online|job listings|remote jobs|browse\s+freelance\s+jobs|freelance job listings|remote employment)\b|تصفح\s+(?:الوظائف|الفرص)|قائمة\s+وظائف/i;
+const genericListingSignals = /\b(?:browse\s+[\d,]+\s+(?:open\s+)?jobs|open jobs and land|jobs today|freelance jobs\s*:\s*work remote|earn online|job listings|remote jobs|freelance jobs)\b|تصفح\s+(?:الوظائف|الفرص)|قائمة\s+وظائف/i;
 function isMarketplaceProjectUrl(url,host) {
  let path='';try{path=new URL(url).pathname.toLowerCase();}catch{return false;}
  if(/\/(?:u|user|users|profile|profiles|freelancer|freelancers|seller|sellers|service|services|gig|gigs|portfolio|hourlie)(?:\/|$)/i.test(path))return false;
@@ -47,7 +61,7 @@ export function classifyFreelanceProject({title='',url='',snippet=''}={}) {
  // project. Only reject on explicit employment wording in the result title or
  // URL; snippet text is noisy and should not erase a real project listing.
  const employment=employmentSignals.test(`${title}\n${url}`);
- const genericListing=genericListingSignals.test(`${title}\n${snippet}`);
+ const genericListing=!marketplaceProject&&genericListingSignals.test(`${title}\n${snippet}`);
  const sellerOffer=sellerOfferSignals.test(text);
  const project=freelanceSignals.test(text)||marketplaceProject;
  const remote=remoteSignals.test(text)||marketplaceProject;
