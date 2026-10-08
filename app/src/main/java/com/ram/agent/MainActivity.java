@@ -25,7 +25,9 @@ public class MainActivity extends Activity {
   @JavascriptInterface public void checkCapabilities(){requestStatus("capabilities");}
   @JavascriptInterface public void testCloudflare(){requestWorkflow("integrations/cloudflare/test","{}","cloudflareTestReply");}
   @JavascriptInterface public void testN8n(){requestWorkflow("integrations/n8n/test","{}","n8nTestReply");}
-  @JavascriptInterface public void testSearch(){requestWorkflow("integrations/search/test","{}","searchTestReply");}
+  @JavascriptInterface public void testSearch(){requestWorkflow("integrations/serper/test","{}","searchTestReply");}
+  @JavascriptInterface public void testFirecrawl(){requestWorkflow("integrations/firecrawl/test","{}","firecrawlTestReply");}
+  @JavascriptInterface public void testExa(){requestWorkflow("integrations/exa/test","{}","exaTestReply");}
   @JavascriptInterface public void showKeyboard(){runOnUiThread(()->{if(dead||web==null)return;web.requestFocus();web.postDelayed(()->{if(dead)return;android.view.inputmethod.InputMethodManager imm=(android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);if(imm!=null)imm.showSoftInput(web,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);},80);});}
   @JavascriptInterface public void search(String query){requestStatus("search",query);}
   @JavascriptInterface public void workflowStart(String data){requestWorkflow("workflow/start",data,"workflowStartReply");}
