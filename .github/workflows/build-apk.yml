@@ -1,4 +1,4 @@
-name: Build Signed APK v1.23
+name: Build Signed APK v1.24
 
 on:
   workflow_dispatch:
@@ -53,7 +53,7 @@ jobs:
         run: |
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           INPUT_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
-          OUTPUT_APK="app/build/outputs/apk/release/RAM-Business-v1.23.apk"
+          OUTPUT_APK="app/build/outputs/apk/release/RAM-Business-v1.24.apk"
           test -n "$APKSIGNER"
           test -f "$INPUT_APK"
           rm -f "$OUTPUT_APK"
@@ -73,6 +73,6 @@ jobs:
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: RAM-BUSINESS-SIGNED-APK-v1.23
-          path: app/build/outputs/apk/release/RAM-Business-v1.23.apk
+          name: RAM-BUSINESS-SIGNED-APK-v1.24
+          path: app/build/outputs/apk/release/RAM-Business-v1.24.apk
           if-no-files-found: error
