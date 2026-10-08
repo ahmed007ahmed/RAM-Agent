@@ -1,7 +1,7 @@
 import express from "express";
 import {WorkflowStore} from "./workflow-store.js";
 import {cloudflareAiConfigured, cloudflareChat} from "./cloudflare-ai.js";
-import {n8nConfigured,notifyN8nOpportunity} from "./n8n.js";
+import {n8nConfigured,notifyN8nOpportunity,testN8nConnection} from "./n8n.js";
 import {validToken, rawSearchReply, createLimiter, extractAdvertisedPay, classifyFreelanceProject} from "./policy.js";
 import {GMAIL_SCOPES, gmailConfigured, loadRefreshToken, makeOAuthState, makeRawEmail, safeMessage, saveRefreshToken, verifyOAuthState} from "./gmail.js";
 
@@ -110,6 +110,8 @@ app.get('/gmail/oauth/start', (req, res) => {
   return res.json({ok: true, authorizationUrl: url.toString()});
 });
 app.post('/capabilities',(req,res)=>res.json({chatConfigured:cloudflareAiConfigured(),chatProviders:cloudflareAiConfigured()?['Cloudflare AI']:[],cloudflareAiConfigured:cloudflareAiConfigured(),cloudflareModel:cloudflareAiConfigured()?(process.env.CLOUDFLARE_AI_MODEL||'@cf/meta/llama-3.1-8b-instruct'):null,n8nConfigured:n8nConfigured(),n8nStatus:n8nConfigured()?'configured_not_tested':'missing_configuration',searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),gmailOAuthConfigured:gmailConfigured(),emailConnected:false,callsConnected:false,cloudJobsConnected:cloudWorkflow.enabled,cloudWorkerRunning:cloudWorkflow.enabled,cloudStoragePersistent:cloudWorkflow.enabled,singleReplicaRequired:true,paymentsEnabled:false,paidAiAllowed:false}));
+app.post('/integrations/cloudflare/test',async(_req,res)=>{try{const result=await cloudflareChat([{role:'user',content:'اختبار اتصال قصير. أجب بكلمة: متصل'}],{temperature:0},process.env);return res.json({ok:true,provider:'Cloudflare AI',model:result.model,reply:result.reply});}catch(error){return res.status(error.status||502).json({ok:false,error:error.message||'فشل اختبار Cloudflare AI.'});}});
+app.post('/integrations/n8n/test',async(_req,res)=>{try{return res.json(await testN8nConnection());}catch(error){return res.status(error.status||502).json({configured:n8nConfigured(),ok:false,error:error.message||'فشل اختبار Webhook في n8n.'});}});
 app.post('/gmail/status', async (_req, res) => {
   try {
     if (!gmailConfigured()) return res.json({ok:true, connected:false, configured:false, email:null});
@@ -185,9 +187,9 @@ cloudWorkerTimer.unref?.();
   Keys belong in Railway environment variables, never in the Android app.
 */
 const searchCache=new Map();
-async function webSearch(query, maxResults = 8) {
+async function webSearch(query, maxResults = 8, {fresh = false} = {}) {
   const cacheKey=JSON.stringify([query,maxResults]), cached=searchCache.get(cacheKey);
-  if(cached&&Date.now()-cached.at<300000)return cached.results;
+  if(!fresh&&cached&&Date.now()-cached.at<300000)return cached.results;
   const serperKey = process.env.SERPER_API_KEY;
   const tavilyKey = process.env.TAVILY_API_KEY;
   if (!serperKey && !tavilyKey) {
@@ -227,6 +229,11 @@ async function webSearch(query, maxResults = 8) {
   searchCache.set(cacheKey,{at:Date.now(),results});
   return results;
 }
+
+app.post('/integrations/search/test',async(_req,res)=>{
+  try{const results=await webSearch('site:upwork.com/freelance-jobs/apply freelance project fixed price client budget',1,{fresh:true});return res.json({ok:true,provider:process.env.SERPER_API_KEY?'Serper':'Tavily',resultCount:results.length,checkedAt:new Date().toISOString()});}
+  catch(error){const status=error.code==='SEARCH_NOT_CONFIGURED'?503:(error.status||502);return res.status(status).json({ok:false,error:error.code==='SEARCH_NOT_CONFIGURED'?'أضف SERPER_API_KEY أو TAVILY_API_KEY في Railway.':'فشل الاتصال بمزود البحث؛ تحقق من المفتاح والحصة.'});}
+});
 
 function searchIntent(message) {
   return /(?:ابحث|بحث|فتش|فرص|وظائف|عملاء|موردين|مشترين|شحن|عقارات|search|find|look up)/i.test(message);

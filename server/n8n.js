@@ -16,3 +16,18 @@ export async function notifyN8nOpportunity(job, env = process.env, fetchImpl = f
   if (!response.ok) throw Object.assign(new Error(`Webhook الخاص بـn8n رفض تشغيل المهمة (HTTP ${response.status}).`), {status:502});
   return {configured:true,triggered:true,status:response.status};
 }
+
+export async function testN8nConnection(env = process.env, fetchImpl = fetch) {
+  if (!n8nConfigured(env)) return {configured:false, ok:false, error:'إعداد n8n غير مكتمل في Railway.'};
+  let url;
+  try { url = new URL(env.N8N_WEBHOOK_URL); }
+  catch { throw Object.assign(new Error('رابط Webhook في n8n غير صالح.'), {status:503}); }
+  if (url.protocol !== 'https:') throw Object.assign(new Error('يجب أن يكون Webhook الخاص بـn8n على HTTPS.'), {status:503});
+  const response = await fetchImpl(url, {
+    method:'POST', signal:AbortSignal.timeout(15000),
+    headers:{Authorization:`Bearer ${env.N8N_WEBHOOK_SECRET}`,'X-RAM-Webhook-Secret':env.N8N_WEBHOOK_SECRET,'X-RAM-Event':'ram.connection.test','Content-Type':'application/json'},
+    body:JSON.stringify({source:'RAM-Agent',event:'ram.connection.test',test:true,noExternalActions:true,idempotencyKey:`connection-test-${Date.now()}`,occurredAt:new Date().toISOString()})
+  });
+  if (!response.ok) throw Object.assign(new Error(`Webhook الخاص بـn8n رفض اختبار الربط (HTTP ${response.status}).`), {status:502});
+  return {configured:true,ok:true,status:response.status,event:'ram.connection.test'};
+}

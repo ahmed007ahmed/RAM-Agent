@@ -76,14 +76,47 @@ function encodeHeader(value, label) {
   return safe;
 }
 
-export function makeRawEmail({to, subject, body, fromName = 'RAM · إنجاز القابضة'}) {
+export function makeRawEmail({to, subject, body, fromName = 'RAM · إنجاز القابضة', attachments = []}) {
   const recipient = encodeHeader(to, 'recipient');
   if (!/^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$/.test(recipient)) throw new Error('Invalid recipient email');
   const title = encodeHeader(subject, 'subject');
   if (title.length > 240 || String(body || '').trim().length < 1 || String(body).length > 30000) throw new Error('Invalid email content');
   const safeName = String(fromName).replace(/[\r\n]/g, '').slice(0, 100);
   const encodedSubject = `=?UTF-8?B?${Buffer.from(title, 'utf8').toString('base64')}?=`;
-  const mime = [
+  if (!Array.isArray(attachments) || attachments.length > 1) throw new Error('Only one text attachment is supported');
+  const plainBody = Buffer.from(String(body), 'utf8').toString('base64').replace(/.{1,76}/g, '$&\r\n').trim();
+  let mime;
+  if (attachments.length) {
+    const attachment = attachments[0];
+    const filename = String(attachment?.filename || 'deliverable.txt');
+    const contentType = String(attachment?.mimeType || 'text/plain');
+    const encoded = String(attachment?.contentBase64 || '');
+    if (!/^[\w.-]{1,100}\.txt$/i.test(filename) || contentType !== 'text/plain' || encoded.length > 700000 || !encoded || encoded.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) throw new Error('Invalid text attachment');
+    const bytes = Buffer.from(encoded, 'base64');
+    if (bytes.length > 512 * 1024 || bytes.toString('base64') !== encoded) throw new Error('Text attachment exceeds 512 KB or is invalid');
+    const boundary = `ram_${randomBytes(18).toString('hex')}`;
+    mime = [
+      `To: ${recipient}`,
+      `Subject: ${encodedSubject}`,
+      `From: =?UTF-8?B?${Buffer.from(safeName, 'utf8').toString('base64')}?=`,
+      'MIME-Version: 1.0',
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      '',
+      `--${boundary}`,
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      plainBody,
+      `--${boundary}`,
+      `Content-Type: text/plain; charset=UTF-8; name="${filename}"`,
+      `Content-Disposition: attachment; filename="${filename}"`,
+      'Content-Transfer-Encoding: base64',
+      '',
+      bytes.toString('base64').replace(/.{1,76}/g, '$&\r\n').trim(),
+      `--${boundary}--`,
+      ''
+    ].join('\r\n');
+  } else mime = [
     `To: ${recipient}`,
     `Subject: ${encodedSubject}`,
     `From: =?UTF-8?B?${Buffer.from(safeName, 'utf8').toString('base64')}?=`,
@@ -91,7 +124,7 @@ export function makeRawEmail({to, subject, body, fromName = 'RAM · إنجاز �
     'Content-Type: text/plain; charset=UTF-8',
     'Content-Transfer-Encoding: base64',
     '',
-    Buffer.from(String(body), 'utf8').toString('base64').replace(/.{1,76}/g, '$&\r\n').trim(),
+    plainBody,
     ''
   ].join('\r\n');
   return Buffer.from(mime, 'utf8').toString('base64url');
