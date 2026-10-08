@@ -23,6 +23,17 @@ test('Cloudflare chat uses the configured model and returns the generated answer
   assert.equal(result.provider,'Cloudflare AI');
 });
 
+test('Cloudflare Workers AI REST response result.response becomes the chat reply',async()=>{
+  const result=await cloudflareChat([{role:'user',content:'مرحبا'}],{},env,async()=>({ok:true,status:200,json:async()=>({success:true,result:{response:'أهلًا بك، كيف أساعدك؟'}})}));
+  assert.equal(result.reply,'أهلًا بك، كيف أساعدك؟');
+});
+
+test('Cloudflare content blocks and HTTP 200 API errors are handled',async()=>{
+  const result=await cloudflareChat([{role:'user',content:'مرحبا'}],{},env,async()=>({ok:true,status:200,json:async()=>({choices:[{message:{content:[{type:'text',text:'مرحبًا'},{type:'text',text:'بك'}]}}]})}));
+  assert.equal(result.reply,'مرحبًا\nبك');
+  await assert.rejects(()=>cloudflareChat([{role:'user',content:'مرحبا'}],{},env,async()=>({ok:true,status:200,json:async()=>({success:false,errors:[{message:'model unavailable'}]})})),/Cloudflare AI: model unavailable/);
+});
+
 test('Cloudflare provider errors keep the real HTTP status for diagnosis',async()=>{
   await assert.rejects(()=>cloudflareChat([{role:'user',content:'مرحبا'}],{},env,async()=>({ok:false,status:401,json:async()=>({errors:[{message:'Invalid API token'}]})})),error=>error.status===401&&/Invalid API token/.test(error.message));
 });

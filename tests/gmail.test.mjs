@@ -32,6 +32,19 @@ test('mail composer blocks header injection and builds UTF-8 MIME', () => {
   assert.throws(() => makeRawEmail({to:'client@example.org', subject:'Hi\nBcc: copy@example.org', body:'Hello'}));
 });
 
+test('mail composer attaches a bounded UTF-8 text deliverable', () => {
+  const encoded = Buffer.from('المخرج النهائي').toString('base64');
+  const raw = makeRawEmail({to:'client@example.org', subject:'تسليم العمل', body:'راجِع المرفق', attachments:[{filename:'RAM-deliverable-job123.txt', mimeType:'text/plain', contentBase64:encoded}]});
+  const mime = Buffer.from(raw, 'base64url').toString('utf8');
+  assert.match(mime, /multipart\/mixed/);
+  assert.match(mime, /filename="RAM-deliverable-job123\.txt"/);
+  assert.match(mime, new RegExp(encoded));
+  assert.throws(() => makeRawEmail({to:'client@example.org', subject:'Hi', body:'Hello', attachments:[{filename:'../evil.txt', mimeType:'text/plain', contentBase64:encoded}]}));
+  assert.throws(() => makeRawEmail({to:'client@example.org', subject:'Hi', body:'Hello', attachments:[{filename:'report.pdf', mimeType:'application/pdf', contentBase64:encoded}]}));
+  assert.throws(() => makeRawEmail({to:'client@example.org', subject:'Hi', body:'Hello', attachments:[{filename:'report.txt', mimeType:'text/plain', contentBase64:'%%%'}]}));
+  assert.throws(() => makeRawEmail({to:'client@example.org', subject:'Hi', body:'Hello', attachments:[{filename:'report.txt', mimeType:'text/plain', contentBase64:Buffer.alloc(512 * 1024 + 1).toString('base64')}]}));
+});
+
 test('Gmail summaries include only safe, bounded message metadata', () => {
   const result = safeMessage({id:'abc',threadId:'t1',labelIds:['UNREAD'],snippet:'s'.repeat(1200),payload:{headers:[{name:'From',value:'Client <client@example.org>'},{name:'Subject',value:'Quote'}]}});
   assert.equal(result.id,'abc'); assert.equal(result.unread,true); assert.equal(result.subject,'Quote');

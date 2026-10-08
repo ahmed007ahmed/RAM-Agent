@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {n8nConfigured,notifyN8nOpportunity} from '../server/n8n.js';
+import {n8nConfigured,notifyN8nOpportunity,testN8nConnection} from '../server/n8n.js';
 
 const env={N8N_WEBHOOK_URL:'https://n8n.example.test/webhook/ram',N8N_WEBHOOK_SECRET:'a-test-secret-that-is-long-enough'};
 
@@ -27,4 +27,15 @@ test('selected work dispatches one guarded opportunity event to n8n',async()=>{
 
 test('n8n refuses non-HTTPS webhook URLs',async()=>{
   await assert.rejects(()=>notifyN8nOpportunity({id:'job-1'}, {...env,N8N_WEBHOOK_URL:'http://n8n.example.test/webhook/ram'}, async()=>{throw Error('must not call')}),/HTTPS/);
+});
+
+test('n8n connection test sends a marked test event without opportunity data',async()=>{
+  let request;
+  const result=await testN8nConnection(env,async(url,options)=>{request={url:String(url),options};return {ok:true,status:200};});
+  const body=JSON.parse(request.options.body);
+  assert.equal(result.ok,true);
+  assert.equal(request.options.headers['X-RAM-Event'],'ram.connection.test');
+  assert.equal(body.test,true);
+  assert.equal(body.noExternalActions,true);
+  assert.equal(body.job,undefined);
 });
