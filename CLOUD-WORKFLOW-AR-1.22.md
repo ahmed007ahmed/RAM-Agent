@@ -1,4 +1,4 @@
-# RAM 1.23 — Cloudflare AI وn8n والمحادثة
+# RAM 1.24 — Cloudflare AI وn8n وكتالوج الأدوات
 
 ## ما يفعله هذا الإصدار
 

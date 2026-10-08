@@ -10,7 +10,7 @@ Follow [`CLOUD-WORKFLOW-AR-1.22.md`](CLOUD-WORKFLOW-AR-1.22.md). The worker stor
 
 ## Android update continuity
 
-Business package: `com.ram.agent.business`. Version 1.23 sets versionCode 20 and versionName `1.23-cloudflare-n8n-chat`. Reuse the same permanent RAM Business signing key in GitHub Actions; do not generate or publish new signing material.
+Business package: `com.ram.agent.business`. Version 1.24 sets versionCode 21 and versionName `1.24-addon-catalog`. Reuse the same permanent RAM Business signing key in GitHub Actions; do not generate or publish new signing material.
 
 ## Remaining unimplemented business automation
 
