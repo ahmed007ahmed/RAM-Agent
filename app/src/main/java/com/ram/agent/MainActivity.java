@@ -11,14 +11,14 @@ public class MainActivity extends Activity {
   android.widget.FrameLayout root=new android.widget.FrameLayout(this);web=new WebView(this);root.addView(web);setContentView(root);root.setOnApplyWindowInsetsListener((v,i)->{if(Build.VERSION.SDK_INT>=30){android.graphics.Insets bars=i.getInsets(WindowInsets.Type.systemBars()),ime=i.getInsets(WindowInsets.Type.ime());v.setPadding(bars.left,bars.top,bars.right,Math.max(bars.bottom,ime.bottom));}else v.setPadding(i.getSystemWindowInsetLeft(),i.getSystemWindowInsetTop(),i.getSystemWindowInsetRight(),i.getSystemWindowInsetBottom());return i;});root.requestApplyInsets();
   WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(false);settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setAllowFileAccessFromFileURLs(false);settings.setAllowUniversalAccessFromFileURLs(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);web.setBackgroundColor(Color.rgb(8,13,24));
   web.setWebChromeClient(new WebChromeClient(){
-   @Override public boolean onJsConfirm(WebView view,JsResult result,String message){
+   @Override public boolean onJsConfirm(WebView view,String url,String message,JsResult result){
     new AlertDialog.Builder(MainActivity.this).setMessage(message)
       .setPositiveButton("متابعة",(dialog,which)->result.confirm())
       .setNegativeButton("إلغاء",(dialog,which)->result.cancel())
       .setOnCancelListener(dialog->result.cancel()).show();
     return true;
    }
-   @Override public boolean onJsAlert(WebView view,JsResult result,String message){
+   @Override public boolean onJsAlert(WebView view,String url,String message,JsResult result){
     new AlertDialog.Builder(MainActivity.this).setMessage(message)
       .setPositiveButton("حسنًا",(dialog,which)->result.confirm())
       .setOnCancelListener(dialog->result.confirm()).show();
