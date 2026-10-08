@@ -23,11 +23,12 @@ export async function testN8nConnection(env = process.env, fetchImpl = fetch) {
   try { url = new URL(env.N8N_WEBHOOK_URL); }
   catch { throw Object.assign(new Error('رابط Webhook في n8n غير صالح.'), {status:503}); }
   if (url.protocol !== 'https:') throw Object.assign(new Error('يجب أن يكون Webhook الخاص بـn8n على HTTPS.'), {status:503});
+  const testId = `connection-test-${Date.now()}`;
   const response = await fetchImpl(url, {
     method:'POST', signal:AbortSignal.timeout(15000),
     headers:{Authorization:`Bearer ${env.N8N_WEBHOOK_SECRET}`,'X-RAM-Webhook-Secret':env.N8N_WEBHOOK_SECRET,'X-RAM-Event':'ram.connection.test','Content-Type':'application/json'},
-    body:JSON.stringify({source:'RAM-Agent',event:'ram.connection.test',test:true,noExternalActions:true,idempotencyKey:`connection-test-${Date.now()}`,occurredAt:new Date().toISOString()})
+    body:JSON.stringify({source:'RAM-Agent',event:'ram.connection.test',test:true,noExternalActions:true,idempotencyKey:testId,testId,occurredAt:new Date().toISOString()})
   });
   if (!response.ok) throw Object.assign(new Error(`Webhook الخاص بـn8n رفض اختبار الربط (HTTP ${response.status}).`), {status:502});
-  return {configured:true,ok:true,status:response.status,event:'ram.connection.test'};
+  return {configured:true,ok:true,accepted:true,status:response.status,event:'ram.connection.test',testId,note:'وصل الطلب إلى Webhook برد HTTP ناجح. هذا لا يثبت نجاح كل عقد n8n؛ تحقق من سجل Executions، واجعل مسار test:true ينتهي قبل أي خطوة خارجية.'};
 }
