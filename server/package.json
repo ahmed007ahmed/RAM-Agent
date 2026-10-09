@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "test": "node automation.test.js"
+    "test": "node --test *.test.js"
   },
   "engines": {
     "node": ">=20"

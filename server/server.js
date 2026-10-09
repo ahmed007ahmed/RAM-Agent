@@ -1,10 +1,12 @@
 import express from "express";
 import {WorkflowStore} from "./workflow-store.js";
+import {CloudOpportunityQueues,QUEUE_CATEGORIES} from "./cloud-queues.js";
 import {cloudflareAiConfigured, cloudflareChat} from "./cloudflare-ai.js";
 import {n8nConfigured,notifyN8nOpportunity,testN8nConnection} from "./n8n.js";
 import {testSerperConnection} from "./serper.js";
 import {testFirecrawlConnection} from "./firecrawl.js";
 import {testExaConnection} from "./exa.js";
+import {twilioConfigured,twilioTestCallConfigured,maskPhone,testTwilioConnection,placeTwilioTestCall} from "./twilio.js";
 import {validToken, rawSearchReply, createLimiter, extractAdvertisedPay, classifyFreelanceProject} from "./policy.js";
 import {GMAIL_SCOPES, gmailConfigured, loadRefreshToken, makeOAuthState, makeRawEmail, safeMessage, saveRefreshToken, verifyOAuthState} from "./gmail.js";
 
@@ -13,6 +15,8 @@ app.use(express.json({ limit: "1mb" }));
 
 const cloudWorkflow = new WorkflowStore(process.env.RAM_DATA_DIR === '/data' ? '/data' : '', {requireMount:true});
 await cloudWorkflow.init();
+const cloudQueues = new CloudOpportunityQueues(process.env.RAM_DATA_DIR === '/data' ? '/data' : '', {requireMount:true});
+await cloudQueues.init();
 
 // Gmail OAuth callback is deliberately public (Google redirects here). All
 // application endpoints remain behind the RAM bearer-token middleware below.
@@ -112,12 +116,14 @@ app.get('/gmail/oauth/start', (req, res) => {
   url.search = new URLSearchParams({client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: process.env.GMAIL_REDIRECT_URI, response_type: 'code', scope: GMAIL_SCOPES.join(' '), access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state}).toString();
   return res.json({ok: true, authorizationUrl: url.toString()});
 });
-app.post('/capabilities',(req,res)=>res.json({chatConfigured:cloudflareAiConfigured(),chatProviders:cloudflareAiConfigured()?['Cloudflare AI']:[],cloudflareAiConfigured:cloudflareAiConfigured(),cloudflareModel:cloudflareAiConfigured()?(process.env.CLOUDFLARE_AI_MODEL||'@cf/meta/llama-3.1-8b-instruct'):null,n8nConfigured:n8nConfigured(),n8nStatus:n8nConfigured()?'configured_not_tested':'missing_configuration',serperConfigured:Boolean(process.env.SERPER_API_KEY),firecrawlConfigured:Boolean(process.env.FIRECRAWL_API_KEY),exaConfigured:Boolean(process.env.EXA_API_KEY),searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),gmailOAuthConfigured:gmailConfigured(),emailConnected:false,callsConnected:false,cloudJobsConnected:cloudWorkflow.enabled,cloudWorkerRunning:cloudWorkflow.enabled,cloudStoragePersistent:cloudWorkflow.enabled,singleReplicaRequired:true,paymentsEnabled:false,paidAiAllowed:false}));
+app.post('/capabilities',(req,res)=>res.json({chatConfigured:cloudflareAiConfigured(),chatProviders:cloudflareAiConfigured()?['Cloudflare AI']:[],cloudflareAiConfigured:cloudflareAiConfigured(),cloudflareModel:cloudflareAiConfigured()?(process.env.CLOUDFLARE_AI_MODEL||'@cf/meta/llama-3.1-8b-instruct'):null,n8nConfigured:n8nConfigured(),n8nStatus:n8nConfigured()?'configured_not_tested':'missing_configuration',serperConfigured:Boolean(process.env.SERPER_API_KEY),firecrawlConfigured:Boolean(process.env.FIRECRAWL_API_KEY),exaConfigured:Boolean(process.env.EXA_API_KEY),searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),gmailOAuthConfigured:gmailConfigured(),twilioConfigured:twilioConfigured(),twilioTestCallConfigured:twilioTestCallConfigured(),twilioTestNumberMasked:maskPhone(process.env.TWILIO_TEST_TO),twilioRealtimeAgentEnabled:false,emailConnected:false,callsConnected:false,cloudJobsConnected:cloudWorkflow.enabled,cloudWorkerRunning:cloudWorkflow.enabled,cloudStoragePersistent:cloudWorkflow.enabled,cloudOpportunityQueuesEnabled:cloudQueues.enabled,cloudOpportunityQueuesPersistent:cloudQueues.enabled&&cloudQueues.ready,backgroundLeadSearchEnabled:process.env.RAM_BACKGROUND_LEADS==='true',singleReplicaRequired:true,paymentsEnabled:false,paidAiAllowed:false}));
 app.post('/integrations/cloudflare/test',async(_req,res)=>{try{const result=await cloudflareChat([{role:'user',content:'اختبار اتصال قصير. أجب بكلمة: متصل'}],{temperature:0},process.env);return res.json({ok:true,provider:'Cloudflare AI',model:result.model,reply:result.reply});}catch(error){return res.status(error.status||502).json({ok:false,error:error.message||'فشل اختبار Cloudflare AI.'});}});
 app.post('/integrations/n8n/test',async(_req,res)=>{try{return res.json(await testN8nConnection());}catch(error){return res.status(error.status||502).json({configured:n8nConfigured(),ok:false,error:error.message||'فشل اختبار Webhook في n8n.'});}});
 app.post('/integrations/serper/test',async(_req,res)=>{try{return res.json(await testSerperConnection(process.env));}catch(error){return res.status(error.status||502).json({ok:false,provider:'Serper',error:error.message||'فشل اختبار Serper.'});}});
 app.post('/integrations/firecrawl/test',async(_req,res)=>{try{return res.json(await testFirecrawlConnection(process.env));}catch(error){return res.status(error.status||502).json({ok:false,provider:'Firecrawl',error:error.message||'فشل اختبار Firecrawl.'});}});
 app.post('/integrations/exa/test',async(_req,res)=>{try{return res.json(await testExaConnection(process.env));}catch(error){return res.status(error.status||502).json({ok:false,provider:'Exa',error:error.message||'فشل اختبار Exa.'});}});
+app.post('/integrations/twilio/test',async(_req,res)=>{try{return res.json(await testTwilioConnection(process.env));}catch(error){return res.status(error.status||502).json({ok:false,provider:'Twilio',error:error.message||'فشل اختبار اتصال Twilio.'});}});
+app.post('/integrations/twilio/test-call',async(req,res)=>{try{return res.json(await placeTwilioTestCall(process.env,{confirmed:req.body?.confirmed===true}));}catch(error){return res.status(error.status||502).json({ok:false,provider:'Twilio',error:error.message||'تعذر إجراء مكالمة الاختبار.',providerCode:error.providerCode||null});}});
 app.post('/gmail/status', async (_req, res) => {
   try {
     if (!gmailConfigured()) return res.json({ok:true, connected:false, configured:false, email:null});
@@ -309,14 +315,14 @@ app.post("/search", async (req, res) => {
 // Android app is offline. It only searches public listings; it never applies,
 // registers, messages clients, or handles money.
 const automationSearchCategories={
+  ADVERTISING:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:guru.com/d/jobs) graphic design advertising banner social media design project client budget',
   TRANSLATION:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:proz.com/job OR site:mostaql.com/project OR site:khamsat.com/community/requests) translation project client budget',
   ENGINEERING:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:guru.com/d/jobs) CAD engineering interior design project client budget',
   TECH:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:guru.com/d/jobs OR site:peopleperhour.com/freelance-jobs) web development programming project client budget',
   RESEARCH:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs OR site:mostaql.com/project) market research business consulting project client budget',
-  LOGISTICS:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) logistics freight shipping coordination project client budget',
+  LOGISTICS:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) logistics freight shipping containers cargo shipper quote land sea air coordination project client budget',
   ENERGY:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) oil gas procurement market research project client budget',
-  SOURCING:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs OR site:mostaql.com/project) supplier sourcing procurement buyer project client budget',
-  PROPERTY:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs) real estate tourism project client budget'
+  SOURCING:'(site:upwork.com/freelance-jobs/apply OR site:freelancer.com/projects OR site:peopleperhour.com/freelance-jobs OR site:mostaql.com/project) supplier sourcing procurement buyer project client budget'
 };
 app.post('/automation/search',async(req,res)=>{
   if(!process.env.SERPER_API_KEY&&!process.env.TAVILY_API_KEY)return res.status(503).json({error:'البحث الحقيقي غير مفعّل. أضف SERPER_API_KEY أو TAVILY_API_KEY في Railway.'});
@@ -332,9 +338,55 @@ app.post('/automation/search',async(req,res)=>{
     catch(error){failures.push({category,error:error.code==='SEARCH_NOT_CONFIGURED'?'خدمة البحث غير مهيأة':`تعذر البحث لدى مزود الخدمة (${error.status||'اتصال'})`});}
   }
   const unique=[...new Map(results.map(item=>[item.url,item])).values()];
+  let queueSave={saved:false,count:0};
+  try{queueSave=await cloudQueues.recordSearch({categories,results:unique,failures});}catch(error){failures.push({category:'CLOUD_QUEUE',error:error.message||'تعذر حفظ نتائج البحث في قوائم السحابة'});}
   const counts=Object.fromEntries(categories.map(code=>[code,unique.filter(item=>item.category===code).length]));
-  return res.json({ok:failures.length===0,realSearch:true,resultType:'REMOTE_FREELANCE_PROJECT',generatedAt:new Date().toISOString(),results:unique,counts,failures});
+  return res.json({ok:failures.length===0,realSearch:true,resultType:'REMOTE_FREELANCE_PROJECT',generatedAt:new Date().toISOString(),results:unique,counts,failures,cloudQueue:queueSave});
 });
+
+const leadSearchCategories={
+  DESIGN:'companies seeking freelance CAD engineering architectural design website development landing pages graphic design advertising project request',
+  FREIGHT:'shipper cargo owner container available freight request quote land sea air shipping company logistics buyer shipment',
+  SOURCING:'buyer product sourcing request for quotation RFQ importer seeking supplier wholesale trader procurement request',
+  OTHER:'remote freelance Arabic translation research writing client request paid project'
+};
+async function runLeadSearch(categories=Object.keys(leadSearchCategories)){
+  if(!process.env.SERPER_API_KEY&&!process.env.TAVILY_API_KEY)throw Object.assign(new Error('البحث الحقيقي غير مفعّل؛ أضف SERPER_API_KEY أو TAVILY_API_KEY.'),{status:503});
+  const chosen=[...new Set(categories.filter(code=>Object.hasOwn(leadSearchCategories,code)))].slice(0,4);
+  if(!chosen.length)throw Object.assign(new Error('اختر قسمًا معروفًا واحدًا على الأقل.'),{status:400});
+  const results=[],failures=[];
+  for(const category of chosen){
+    try{
+      const found=await webSearch(leadSearchCategories[category],5,{fresh:true});
+      results.push(...found.map(result=>({...result,category,leadType:category==='FREIGHT'?'SHIPPER_OR_CARRIER':category==='SOURCING'?'BUYER_OR_SUPPLIER':category==='DESIGN'?'SERVICE_BUYER':'REMOTE_WORK_REQUEST'})));
+    }catch(error){failures.push({category,error:`تعذر البحث (${error.status||'اتصال'})`});}
+  }
+  const unique=[...new Map(results.map(item=>[item.url,item])).values()];
+  const saved=await cloudQueues.recordSearch({mode:'LEAD',categories:chosen,results:unique,failures});
+  return {ok:failures.length===0,realSearch:true,generatedAt:new Date().toISOString(),results:unique,counts:Object.fromEntries(Object.keys(QUEUE_CATEGORIES).map(code=>[code,unique.filter(x=>cloudQueues.categoryFor(x.category)===code).length])),failures,cloudQueue:saved,note:'نتائج البحث الأولية غير متحققة؛ راجع مصدر كل جهة قبل التواصل أو عرض عمولة.'};
+}
+app.post('/automation/leads/run',async(req,res)=>{
+  try{const categories=Array.isArray(req.body?.categories)?req.body.categories:Object.keys(leadSearchCategories);return res.json(await runLeadSearch(categories));}
+  catch(error){return res.status(error.status||502).json({ok:false,error:error.message||'تعذر تشغيل البحث السحابي.'});}
+});
+app.post('/automation/queues/read',(req,res)=>{
+  if(!cloudQueues.enabled)return res.status(503).json({ok:false,error:'قوائم السحابة تحتاج RAM_DATA_DIR=/data وربط Volume دائم.'});
+  return res.json({ok:true,...cloudQueues.list({category:String(req.body?.category||''),status:String(req.body?.status||''),limit:req.body?.limit})});
+});
+app.post('/automation/queues/update',async(req,res)=>{
+  try{return res.json({ok:true,item:await cloudQueues.update(req.body||{})});}
+  catch(error){return res.status(error.status||500).json({ok:false,error:error.message||'تعذر تحديث سجل القائمة.'});}
+});
+// Optional daily cloud lead scan. Enable only after the owner confirms the
+// search provider quota and a single Railway replica with /data volume.
+const backgroundLeadIntervalHours=Math.min(Math.max(Number(process.env.RAM_BACKGROUND_LEADS_INTERVAL_HOURS)||24,6),168);
+if(process.env.RAM_BACKGROUND_LEADS==='true'&&cloudQueues.enabled&&(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY)){
+  const timer=setInterval(()=>{
+    if(Date.now()-(cloudQueues.data.lastRun?.at||0)<backgroundLeadIntervalHours*3600000)return;
+    runLeadSearch().catch(error=>console.error('RAM background lead search failed:',error?.status||error?.name||'error'));
+  },60000);
+  timer.unref?.();
+}
 
 app.post("/chat", async (req, res) => {
   try {
