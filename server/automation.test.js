@@ -4,6 +4,7 @@ import {testSerperConnection} from './serper.js';
 import {testFirecrawlConnection} from './firecrawl.js';
 import {testExaConnection} from './exa.js';
 import {testN8nConnection} from './n8n.js';
+import {placeTwilioTestCall,testTwilioConnection,twilioConfigured,twilioTestCallConfigured} from './twilio.js';
 
 test('Serper connection test calls the real endpoint with its configured key', async () => {
   let request;
@@ -85,4 +86,60 @@ test('n8n connection test rejects a non-success HTTP response', async () => {
     }, async () => new Response(null, {status:401})),
     /رفض اختبار الربط/
   );
+});
+
+const twilioEnv={TWILIO_ACCOUNT_SID:'AC'+'a'.repeat(32),TWILIO_AUTH_TOKEN:'test-twilio-auth-token-value',TWILIO_CALLER_ID:'+12025550100',TWILIO_TEST_TO:'+967771234567'};
+
+test('Twilio connection test validates credentials without starting a call', async () => {
+  let request;
+  const result=await testTwilioConnection(twilioEnv,async(url,options)=>{
+    request={url:String(url),options};
+    return new Response(JSON.stringify({sid:twilioEnv.TWILIO_ACCOUNT_SID,status:'active'}),{status:200});
+  });
+  assert.equal(request.url,`https://api.twilio.com/2010-04-01/Accounts/${twilioEnv.TWILIO_ACCOUNT_SID}.json`);
+  assert.equal(request.options.method,'GET');
+  assert.match(request.options.headers.Authorization,/^Basic /);
+  assert.equal(result.ok,true);
+  assert.equal(result.accountStatus,'active');
+  assert.equal(result.testNumberConfigured,true);
+});
+
+test('Twilio configuration requires a valid account SID and E.164 test numbers',()=>{
+  assert.equal(twilioConfigured(twilioEnv),true);
+  assert.equal(twilioTestCallConfigured(twilioEnv),true);
+  assert.equal(twilioTestCallConfigured({...twilioEnv,TWILIO_TEST_TO:'0771234567'}),false);
+});
+
+test('Twilio supports an explicit anonymous caller ID mode',()=>{
+  assert.equal(twilioTestCallConfigured({...twilioEnv,TWILIO_CALLER_ID:'anonymous'}),true);
+  assert.equal(twilioTestCallConfigured({...twilioEnv,TWILIO_CALLER_ID:'private number'}),false);
+});
+
+test('Twilio test call is blocked unless confirmed and calls only the Railway test number',async()=>{
+  let requested=false;
+  await assert.rejects(placeTwilioTestCall(twilioEnv,{confirmed:false},async()=>{requested=true;}),/يلزم تأكيد/);
+  assert.equal(requested,false);
+  let request;
+  const result=await placeTwilioTestCall(twilioEnv,{confirmed:true},async(url,options)=>{
+    request={url:String(url),options};
+    return new Response(JSON.stringify({sid:'CA'+'b'.repeat(32),status:'queued'}),{status:201});
+  });
+  const body=new URLSearchParams(request.options.body);
+  assert.equal(request.options.method,'POST');
+  assert.equal(body.get('To'),twilioEnv.TWILIO_TEST_TO);
+  assert.equal(body.get('From'),twilioEnv.TWILIO_CALLER_ID);
+  assert.equal(body.get('TimeLimit'),'30');
+  assert.match(body.get('Twiml'),/مكالمة اختبار من رام/);
+  assert.equal(result.ok,true);
+  assert.equal(result.status,'queued');
+});
+
+test('Twilio private caller ID mode requests anonymous caller ID',async()=>{
+  let request;
+  const result=await placeTwilioTestCall({...twilioEnv,TWILIO_CALLER_ID:'anonymous'},{confirmed:true},async(url,options)=>{
+    request={url:String(url),options};
+    return new Response(JSON.stringify({sid:'CA'+'c'.repeat(32),status:'queued'}),{status:201});
+  });
+  assert.equal(new URLSearchParams(request.options.body).get('From'),'anonymous');
+  assert.equal(result.callerIdMode,'private');
 });
