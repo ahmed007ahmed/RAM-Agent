@@ -53,6 +53,9 @@ public class MainActivity extends Activity {
   @JavascriptInterface public void workflowGet(String id){JSONObject body=new JSONObject();try{body.put("id",id);}catch(Exception ignored){}requestWorkflow("workflow/get",body.toString(),"workflowGetReply");}
   @JavascriptInterface public void workflowUpdate(String data){requestWorkflow("workflow/update",data,"workflowUpdateReply");}
   @JavascriptInterface public void workflowRetry(String data){requestWorkflow("workflow/retry",data,"workflowRetryReply");}
+  @JavascriptInterface public void cloudQueuesRead(String data){requestWorkflow("automation/queues/read",data,"cloudQueuesReadReply");}
+  @JavascriptInterface public void runCloudLeads(String data){requestWorkflow("automation/leads/run",data,"cloudLeadsRunReply");}
+  @JavascriptInterface public void cloudQueueUpdate(String data){requestWorkflow("automation/queues/update",data,"cloudQueueUpdateReply");}
   @JavascriptInterface public void gmailStart(){new Thread(()->{try{JSONObject data=new JSONObject(get("gmail/oauth/start"));String value=data.optString("authorizationUrl","");URL url=new URL(value);if(!"https".equals(url.getProtocol())||!"accounts.google.com".equals(url.getHost()))throw new IOException("رابط تفويض Google غير صالح");runOnUiThread(()->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(value)));JSONObject ok=new JSONObject();try{ok.put("ok",true);}catch(Exception ignored){}js("gmailStartReply",ok.toString());}catch(Exception e){js("gmailStartReply",errorJson(new IOException("تعذر فتح صفحة Google")).toString());}});}catch(Exception e){js("gmailStartReply",errorJson(e).toString());}} ,"ram-gmail-oauth").start();}
   @JavascriptInterface public void gmailStatus(){requestGmail("gmail/status",new JSONObject(),"gmailStatusReply");}
   @JavascriptInterface public void gmailInbox(){requestGmail("gmail/inbox",new JSONObject(),"gmailInboxReply");}
