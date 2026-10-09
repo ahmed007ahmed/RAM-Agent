@@ -83,8 +83,13 @@ test('n8n connection test rejects a non-success HTTP response', async () => {
     testN8nConnection({
       N8N_WEBHOOK_URL:'https://example.n8n.cloud/webhook/ram',
       N8N_WEBHOOK_SECRET:'a-long-random-test-secret-value'
-    }, async () => new Response(null, {status:401})),
-    /رفض اختبار الربط/
+    }, async () => new Response(JSON.stringify({message:'Credential rejected: a-long-random-test-secret-value'}), {status:500})),
+    error => {
+      assert.match(error.message, /رفض اختبار الربط \(HTTP 500\)/);
+      assert.doesNotMatch(error.message, /a-long-random-test-secret-value/);
+      assert.equal(error.upstreamStatus, 500);
+      return true;
+    }
   );
 });
 
