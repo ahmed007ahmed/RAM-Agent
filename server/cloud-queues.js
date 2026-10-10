@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {randomUUID} from 'node:crypto';
 
 export const QUEUE_CATEGORIES = Object.freeze({
   DESIGN: 'التصميم والهندسة والمواقع والإعلانات',
@@ -30,9 +29,10 @@ export class CloudOpportunityQueues {
     if (!this.enabled) { this.ready = true; return; }
     try {
       const saved = JSON.parse(await fs.readFile(this.file, 'utf8'));
-      if (saved?.version === 1 && Array.isArray(saved.items)) {
-        this.data = {version:1, updatedAt:saved.updatedAt || null, lastRun:saved.lastRun || null, items:saved.items.filter(x => x && validUrl(x.url)).slice(0, 500)};
-      }
+      // Search results are leads, not work RAM has started. Purge the former
+      // persistent opportunity list on upgrade; active work lives in
+      // WorkflowStore instead.
+      await this.persist();
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
       await this.persist();
@@ -57,37 +57,11 @@ export class CloudOpportunityQueues {
   }
 
   async recordSearch({categories = [], results = [], failures = [], mode = 'FREELANCE'} = {}) {
-    if (!this.enabled) return {saved:false, count:0};
-    const stamp = this.now();
-    const byUrl = new Map(this.data.items.map(item => [item.url, item]));
-    let added = 0;
-    for (const result of results.slice(0, 300)) {
-      const url = validUrl(result.url);
-      if (!url || (mode !== 'LEAD' && !result.eligible)) continue;
-      const existing = byUrl.get(url);
-      if (existing) {
-        existing.lastSeenAt = stamp;
-        if (result.snippet) existing.snippet = clean(result.snippet, 2500);
-        continue;
-      }
-      const sourceCategory = clean(result.category, 40).toUpperCase();
-      const item = {
-        id: randomUUID(), url, title:clean(result.title, 300), snippet:clean(result.snippet, 2500),
-        category:this.categoryFor(sourceCategory), sourceCategory, status:'FOUND',
-        client:clean(result.client, 200), pay:clean(result.pay || result.payText, 200),
-        workType:clean(result.workType || (mode === 'LEAD' ? 'BUSINESS_LEAD_REQUIRES_VERIFICATION' : 'REMOTE_FREELANCE_PROJECT'), 60),
-        verification:mode === 'LEAD' ? 'UNVERIFIED_SEARCH_RESULT' : 'NEEDS_OWNER_REVIEW',
-        retrievedAt:clean(result.retrievedAt, 50) || new Date(stamp).toISOString(),
-        firstSeenAt:stamp, lastSeenAt:stamp, notes:[],
-        evidence:clean(result.evidence || result.amountEvidence, 500)
-      };
-      byUrl.set(url, item); added++;
-    }
-    this.data.items = [...byUrl.values()].sort((a,b) => (b.lastSeenAt || 0) - (a.lastSeenAt || 0)).slice(0, 500);
-    this.data.lastRun = {at:stamp, categories:[...new Set(categories.filter(code => /^[A-Z_]{2,40}$/.test(code)).map(code => this.categoryFor(code)))], resultCount:results.length, added, failures:failures.slice(0,8)};
-    this.data.updatedAt = stamp;
-    await this.persist();
-    return {saved:true, count:added, total:this.data.items.length, lastRun:this.data.lastRun};
+    // Keep discovered leads in the current response only. Once the owner or
+    // authorized agent actually starts a job, /workflow/start stores it in
+    // the durable work queue. Do not persist unstarted opportunities.
+    const count = results.filter(result => validUrl(result.url) && (mode === 'LEAD' || result.eligible)).length;
+    return {saved:false, persistent:false, count:0, ephemeralResults:count, reason:'UNSTARTED_OPPORTUNITIES_NOT_STORED'};
   }
 
   list({category = '', status = '', limit = 100} = {}) {

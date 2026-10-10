@@ -1,5 +1,6 @@
 import express from "express";
 import {WorkflowStore} from "./workflow-store.js";
+import {workflowStartError} from "./workflow-start-policy.js";
 import {CloudOpportunityQueues,QUEUE_CATEGORIES} from "./cloud-queues.js";
 import {cloudflareAiConfigured, cloudflareChat} from "./cloudflare-ai.js";
 import {n8nConfigured,notifyN8nOpportunity,testN8nConnection} from "./n8n.js";
@@ -9,6 +10,8 @@ import {testExaConnection} from "./exa.js";
 import {twilioConfigured,twilioTestCallConfigured,maskPhone,testTwilioConnection,placeTwilioTestCall} from "./twilio.js";
 import {validToken, rawSearchReply, createLimiter, extractAdvertisedPay, classifyFreelanceProject} from "./policy.js";
 import {GMAIL_SCOPES, gmailConfigured, loadRefreshToken, makeOAuthState, makeRawEmail, safeMessage, saveRefreshToken, verifyOAuthState} from "./gmail.js";
+import {getPlatformConnectorCatalog} from "./platform-connectors.js";
+import {getFreeOpportunitySources, searchFreeOpportunityFeeds} from "./free-opportunity-connectors.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -116,7 +119,8 @@ app.get('/gmail/oauth/start', (req, res) => {
   url.search = new URLSearchParams({client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: process.env.GMAIL_REDIRECT_URI, response_type: 'code', scope: GMAIL_SCOPES.join(' '), access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state}).toString();
   return res.json({ok: true, authorizationUrl: url.toString()});
 });
-app.post('/capabilities',(req,res)=>res.json({chatConfigured:cloudflareAiConfigured(),chatProviders:cloudflareAiConfigured()?['Cloudflare AI']:[],cloudflareAiConfigured:cloudflareAiConfigured(),cloudflareModel:cloudflareAiConfigured()?(process.env.CLOUDFLARE_AI_MODEL||'@cf/meta/llama-3.1-8b-instruct'):null,n8nConfigured:n8nConfigured(),n8nStatus:n8nConfigured()?'configured_not_tested':'missing_configuration',serperConfigured:Boolean(process.env.SERPER_API_KEY),firecrawlConfigured:Boolean(process.env.FIRECRAWL_API_KEY),exaConfigured:Boolean(process.env.EXA_API_KEY),searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),gmailOAuthConfigured:gmailConfigured(),twilioConfigured:twilioConfigured(),twilioTestCallConfigured:twilioTestCallConfigured(),twilioTestNumberMasked:maskPhone(process.env.TWILIO_TEST_TO),twilioRealtimeAgentEnabled:false,emailConnected:false,callsConnected:false,cloudJobsConnected:cloudWorkflow.enabled,cloudWorkerRunning:cloudWorkflow.enabled,cloudStoragePersistent:cloudWorkflow.enabled,cloudOpportunityQueuesEnabled:cloudQueues.enabled,cloudOpportunityQueuesPersistent:cloudQueues.enabled&&cloudQueues.ready,backgroundLeadSearchEnabled:process.env.RAM_BACKGROUND_LEADS==='true',singleReplicaRequired:true,paymentsEnabled:false,paidAiAllowed:false}));
+app.get('/platform-connectors',(_req,res)=>res.json({ok:true,connectors:getPlatformConnectorCatalog()}));
+app.post('/capabilities',(req,res)=>res.json({platformConnectors:getPlatformConnectorCatalog(),freeOpportunityApis:getFreeOpportunitySources(),chatConfigured:cloudflareAiConfigured(),chatProviders:cloudflareAiConfigured()?['Cloudflare AI']:[],cloudflareAiConfigured:cloudflareAiConfigured(),cloudflareModel:cloudflareAiConfigured()?(process.env.CLOUDFLARE_AI_MODEL||'@cf/meta/llama-3.1-8b-instruct'):null,n8nConfigured:n8nConfigured(),n8nStatus:n8nConfigured()?'configured_not_tested':'missing_configuration',serperConfigured:Boolean(process.env.SERPER_API_KEY),firecrawlConfigured:Boolean(process.env.FIRECRAWL_API_KEY),exaConfigured:Boolean(process.env.EXA_API_KEY),searchConfigured:true,freeSearchConfigured:true,paidWebSearchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),gmailOAuthConfigured:gmailConfigured(),twilioConfigured:twilioConfigured(),twilioTestCallConfigured:twilioTestCallConfigured(),twilioTestNumberMasked:maskPhone(process.env.TWILIO_TEST_TO),twilioRealtimeAgentEnabled:false,emailConnected:false,callsConnected:false,cloudJobsConnected:cloudWorkflow.enabled,cloudWorkerRunning:cloudWorkflow.enabled,cloudStoragePersistent:cloudWorkflow.enabled,cloudOpportunityQueuesEnabled:false,cloudOpportunityQueuesPersistent:false,backgroundLeadSearchEnabled:false,singleReplicaRequired:true,paymentsEnabled:false,paidAiAllowed:false}));
 app.post('/integrations/cloudflare/test',async(_req,res)=>{try{const result=await cloudflareChat([{role:'user',content:'اختبار اتصال قصير. أجب بكلمة: متصل'}],{temperature:0},process.env);return res.json({ok:true,provider:'Cloudflare AI',model:result.model,reply:result.reply});}catch(error){return res.status(error.status||502).json({ok:false,error:error.message||'فشل اختبار Cloudflare AI.'});}});
 app.post('/integrations/n8n/test',async(_req,res)=>{try{return res.json(await testN8nConnection());}catch(error){return res.status(error.status||502).json({configured:n8nConfigured(),ok:false,upstreamStatus:error.upstreamStatus||null,error:error.message||'فشل اختبار Webhook في n8n.'});}});
 app.post('/integrations/serper/test',async(_req,res)=>{try{return res.json(await testSerperConnection(process.env));}catch(error){return res.status(error.status||502).json({ok:false,provider:'Serper',error:error.message||'فشل اختبار Serper.'});}});
@@ -160,7 +164,7 @@ async function answerWithCloudflare(messages, options = {}) {
 
 async function generateCloudWorkflowDraft(job, kind) {
   const label = kind === 'plan' ? 'تقرير متطلبات وخطة' : kind === 'sample' ? 'عينة تحضيرية غير ملزمة قبل قبول العميل' : 'مسودة مخرج للعمل المتفق عليه';
-  const system = `أنت رام، مساعد أعمال عربي عملي. أنشئ ${label} بالاعتماد على معلومات المهمة أدناه فقط. اكتب بالعربية الواضحة مع عناوين ونقاط عملية، واذكر بوضوح أي معلومات ناقصة أو افتراضات. لا تختلق بيانات العميل أو معايير المنصة أو تفاصيل غير موجودة. لا تدّع أنك سجلت حسابًا أو تواصلت أو سلمت عملًا أو قبضت مالًا. لا تكتب توقيعًا قانونيًا أو قبولًا نيابة عن المستخدم. عند إعداد عينة قبل الاتفاق، ضع تنبيهًا بأنها عينة فقط. عند إعداد مخرج بعد اتفاق المالك، أنجز ما يمكن داخل النص وحده، واذكر الملفات/الأدوات الخارجية التي لا يمكن إنتاجها هنا. لا تذكر بيانات الدفع أو معلومات شخصية.`;
+  const system = `أنت رام، مساعد أعمال عربي عملي. أنشئ ${label} بالاعتماد على معلومات المهمة أدناه فقط. اكتب بالعربية الواضحة مع عناوين ونقاط عملية، واذكر بوضوح أي معلومات ناقصة أو افتراضات. لا تختلق بيانات العميل أو معايير المنصة أو تفاصيل غير موجودة. لا تدّع أنك سجلت حسابًا أو تواصلت أو قدمت عرضًا أو سلّمت عملًا أو قبضت مالًا. لا تكتب توقيعًا قانونيًا أو قبولًا نيابة عن المستخدم. أمر المالك ببدء المعالجة السحابية لا يعني قبول العميل؛ إن لم يوجد قبول موثق فسمِّ الناتج خطة أو عينة أو مسودة تقديم ولا تعرضه كتسليم نهائي. أنجز ما يمكن داخل النص وحده، واذكر الملفات/الأدوات الخارجية التي لا يمكن إنتاجها هنا. لا تذكر بيانات الدفع أو معلومات شخصية.`;
   const user = `نوع المطلوب: ${label}\nالعنوان: ${job.title}\nالقسم: ${job.category}\nرابط المصدر: ${job.source}\nوصف الإعلان/المهمة: ${job.details}\nالعميل المذكور: ${job.client || 'غير معروف'}\nالمبلغ والعملة كما ظهرا: ${Number.isSafeInteger(job.amount) ? (job.amount / 100).toFixed(2) : 'غير معلن'} ${job.currency || ''}\nالموعد المذكور: ${job.deadline || 'غير محدد'}\nالاتفاق الذي أكده المالك: ${kind === 'deliverable' ? (job.agreement || 'لا يوجد اتفاق مسجل') : 'لم يُقبل عقد'}\n\n${kind === 'plan' ? 'رتب التقرير: ملخص الطلب، المتطلبات، المخرجات، ما يلزم التحقق منه، خطة تنفيذ مرحلية، أسئلة حاسمة للمالك، ومخاطر/نقاط لا يجوز افتراضها.' : kind === 'sample' ? 'جهز نموذجًا قصيرًا أو تصورًا أوليًا مناسبًا للتخصص، اعتمادًا على النص المتاح، مع قائمة المعلومات الناقصة.' : 'اكتب المخرج النصي المتفق عليه بأفضل صورة ممكنة ثم أضف فحص جودة قصيرًا وما يحتاج إلى مراجعة بشرية قبل التسليم.'}`;
   const {reply, provider, model} = await answerWithCloudflare([{role:'system', content:system}, {role:'user', content:user}], {temperature:0.35});
   return {content:reply, provider, model};
@@ -168,7 +172,10 @@ async function generateCloudWorkflowDraft(job, kind) {
 
 app.post('/workflow/start', async (req, res) => {
   try {
-    const job = await cloudWorkflow.start(req.body || {});
+    const input = req.body || {};
+    const startError = workflowStartError(input);
+    if (startError) return res.status(400).json({error:startError});
+    const job = await cloudWorkflow.start(input);
     let n8n={configured:n8nConfigured(),triggered:false};
     try { n8n=await notifyN8nOpportunity(req.body||{}); }
     catch(error) { n8n={configured:true,triggered:false,error:error.message||'تعذر تشغيل Webhook في n8n.'}; }
@@ -243,8 +250,8 @@ async function webSearch(query, maxResults = 8, {fresh = false} = {}) {
 }
 
 app.post('/integrations/search/test',async(_req,res)=>{
-  try{const results=await webSearch('site:upwork.com/freelance-jobs/apply freelance project fixed price client budget',1,{fresh:true});return res.json({ok:true,provider:process.env.SERPER_API_KEY?'Serper':'Tavily',resultCount:results.length,checkedAt:new Date().toISOString()});}
-  catch(error){const status=error.code==='SEARCH_NOT_CONFIGURED'?503:(error.status||502);return res.status(status).json({ok:false,error:error.code==='SEARCH_NOT_CONFIGURED'?'أضف SERPER_API_KEY أو TAVILY_API_KEY في Railway.':'فشل الاتصال بمزود البحث؛ تحقق من المفتاح والحصة.'});}
+  try{const result=await searchFreeOpportunityFeeds('remote contract design', {maxResults:5});const connected=result.sources.filter(source=>!result.errors.some(error=>error.source===source.name)).length;return res.status(connected?200:502).json({ok:connected>0,provider:'Himalayas + Jobicy (free public APIs)',resultCount:result.results.length,connectedSources:connected,sourceErrors:result.errors,checkedAt:new Date().toISOString()});}
+  catch(error){return res.status(502).json({ok:false,error:'تعذر الاتصال بمصادر الفرص المجانية الآن.'});}
 });
 
 function searchIntent(message) {
@@ -252,7 +259,7 @@ function searchIntent(message) {
 }
 
 async function summarizeSearch(query, results) {
-  if (!results.length) return "لم أعثر على مشروع مستقل مدفوع عن بُعد يطابق هذا القسم. استُبعدت إعلانات الوظائف والتوظيف التقليدي؛ جرّب كلمات تخصصية أبسط.";
+  if (!results.length) return "لم أعثر على فرصة عقد/عمل حر عن بُعد تطابق هذا البحث من المصادر المجانية المتاحة. جرّب كلمات تخصصية أبسط.";
 
   const evidence = results.map(r =>
     `[${r.id}] ${r.title}\nURL: ${r.url}\n${r.snippet}`
@@ -261,10 +268,10 @@ async function summarizeSearch(query, results) {
   const { reply } = await answerWithCloudflare([
     {
       role: "system",
-      content: `أنت RAM. أمامك نتائج بحث حقيقية من الويب لمشاريع عمل حر عن بُعد.
+      content: `أنت RAM. أمامك نتائج حقيقية من مصادر الفرص العامة. ميّز بدقة بين مشروع مستقل وعقد توظيف؛ لا تصف إعلان Contractor/Contract كأنه مشروع مستقل أو عميل وافق على الدفع.
 أجب بالعربية باختصار ووضوح.
 اعتمد فقط على النتائج المعطاة ولا تخترع شركات أو أسعاراً أو روابط.
-لا تعرض وظيفة دوام أو إعلان توظيف على أنه مشروع مستقل. المبلغ لا يعد معلنًا إلا إذا ظهر بوضوح في بيانات النتيجة.
+لا تعرض وظيفة دوام كامل أو إعلان توظيف على أنه مشروع مستقل. اذكر نوع العمل كما أعاده المصدر، وقل إن الرسوم وشروط الدفع غير متحققة إلى أن يراجع المستخدم الرابط. المبلغ لا يعد معلنًا إلا إذا ظهر بوضوح في بيانات النتيجة.
 عند ذكر معلومة من نتيجة، ضع رقم المصدر مثل [1].
 في النهاية أضف عنوان "المصادر" ثم روابط النتائج الأكثر صلة.
 إذا كانت النتائج لا تثبت معلومة، قل ذلك.`
@@ -282,12 +289,18 @@ app.post("/search", async (req, res) => {
   try {
     const query = String(req.body?.query || req.body?.message || "").trim();
     if (!query||query.length>2000) return res.status(400).json({ error: "اكتب عبارة بحث بين 1 و2000 حرف" });
-
-    const rawResults = await webSearch(query, req.body?.maxResults || 10);
-    const classified=rawResults.map(r=>({...r,...classifyFreelanceProject(r)}));
-    const results=classified.filter(r=>r.eligible);
+    const freeResult = await searchFreeOpportunityFeeds(query, {maxResults:req.body?.maxResults || 10});
+    let paidResults=[];let paidSearchError=null;
+    if(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY){
+      try{paidResults=await webSearch(query,req.body?.maxResults||10);}catch(error){paidSearchError=error?.message||'paid search failed';}
+    }
+    const classified=paidResults.map(r=>({...r,...classifyFreelanceProject(r)}));
+    const freelanceResults=classified.filter(r=>r.eligible);
+    const results=[...freelanceResults,...freeResult.results].slice(0,Math.min(Math.max(Number(req.body?.maxResults)||10,1),20));
+    const failures=[...freeResult.errors.map(item=>({source:item.source,error:item.error})),...(paidSearchError?[{source:'paid_web_search',error:paidSearchError}]:[])];
+    if(!results.length&&freeResult.errors.length===freeResult.sources.length)return res.status(502).json({error:'تعذر الاتصال بمصادر الفرص المجانية الآن.',sourceErrors:failures});
     let answer;
-    try{answer=await summarizeSearch(query,results);}catch{answer=rawSearchReply(results);}
+    try{answer=await summarizeSearch(query,results);}catch{answer=results.length?results.map((item,index)=>`${index+1}. ${item.title} — ${item.employmentType||'مشروع مستقل'} · ${item.company||'الشركة غير مذكورة'}\n${item.url}`).join('\n\n'):'لم تُرجع المصادر المجانية إعلانات مطابقة في هذه الجولة.';}
 
     return res.json({
       ok: true,
@@ -297,16 +310,15 @@ app.post("/search", async (req, res) => {
       reply: answer,
       response: answer,
       results,
-      excludedCount:classified.length-results.length,
-      resultType:"REMOTE_FREELANCE_PROJECT"
+      sources:freeResult.sources,
+      sourceErrors:failures,
+      excludedCount:classified.length-freelanceResults.length,
+      resultType:"REMOTE_OPPORTUNITIES"
     });
   } catch (error) {
     console.error("RAM search error:", error.status || "unknown");
-    const status = error.code === "SEARCH_NOT_CONFIGURED" ? 503 : (error.status || 500);
-    return res.status(status).json({
-      error: error.code === "SEARCH_NOT_CONFIGURED"
-        ? "البحث الحقيقي غير مفعّل بعد. أضف SERPER_API_KEY أو TAVILY_API_KEY في Railway."
-        : "تعذر تنفيذ البحث الحقيقي الآن"
+    return res.status(error.status || 500).json({
+      error: "تعذر تنفيذ البحث الحقيقي الآن"
     });
   }
 });
@@ -377,17 +389,6 @@ app.post('/automation/queues/update',async(req,res)=>{
   try{return res.json({ok:true,item:await cloudQueues.update(req.body||{})});}
   catch(error){return res.status(error.status||500).json({ok:false,error:error.message||'تعذر تحديث سجل القائمة.'});}
 });
-// Optional daily cloud lead scan. Enable only after the owner confirms the
-// search provider quota and a single Railway replica with /data volume.
-const backgroundLeadIntervalHours=Math.min(Math.max(Number(process.env.RAM_BACKGROUND_LEADS_INTERVAL_HOURS)||24,6),168);
-if(process.env.RAM_BACKGROUND_LEADS==='true'&&cloudQueues.enabled&&(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY)){
-  const timer=setInterval(()=>{
-    if(Date.now()-(cloudQueues.data.lastRun?.at||0)<backgroundLeadIntervalHours*3600000)return;
-    runLeadSearch().catch(error=>console.error('RAM background lead search failed:',error?.status||error?.name||'error'));
-  },60000);
-  timer.unref?.();
-}
-
 app.post("/chat", async (req, res) => {
   try {
     const message = String(req.body?.message || "").trim();
@@ -419,7 +420,8 @@ app.post("/chat", async (req, res) => {
 كن وكيل عمل عمليًا: عند وضوح الطلب أنجز الجزء الممكن الآن وقدّم الناتج؛ وعند تعذر التنفيذ اذكر العائق الحقيقي والخطوة المطلوبة. في كل مهمة طويلة، ميّز بوضوح بين ما تم، وما هو مسودة، وما لم يبدأ، وما ينتظر من أحمد. لخّص المطلوب والمتطلبات ثم اقترح خطة قصيرة قابلة للتنفيذ، ولا تكرر قوائم الخدمات أو كلام المستخدم بلا داع.
 تعامل مع الصور ومعرض الهاتف والملفات وجهات الاتصال والمعلومات الخاصة على أنها خارج نطاق وصولك. لا تطلبها ولا تدّع الاطلاع عليها؛ استخدم فقط ما يرسله أحمد صراحةً إلى المهمة الحالية، ولا تشارك بياناته الخاصة في رد أو مسودة إلا إذا طلب ذلك صراحةً لهذه المهمة.
 المال تحت سيطرة أحمد وحده: لا تدفع، ولا تشترك، ولا تشتري، ولا تحوّل أو تسحب أموالًا، ولا تنفذ تداولًا. بيانات البنك والمحفظة سرية؛ لا تدرجها في رسالة أو عرض ولا ترسلها لأي جهة إلا إذا طلب أحمد صراحةً تضمينها في المسودة ووافق بنفسه على إرسالها خارج رام.
-لا توقّع عقدًا ولا تقبل عرضًا ملزمًا ولا تنشئ حسابًا أو ترسل عرضًا أو ملفًا نيابة عنه دون أداة متصلة وموافقة صريحة من أحمد على الإجراء المحدد. لا تعتبر اختيار الفرصة موافقةً من العميل ولا تنفيذًا للعمل.
+أحمد منحك تفويضًا مستمرًا للبحث عن فرص الأونلاين، وفرزها، واختيار ما تستطيع إنجازه، وإعداد العروض والتقديم عليها تلقائيًا متى توفر موصل رسمي للحساب. لا تطلب موافقته على كل خطوة روتينية. هذا التفويض لا يسمح بدفع رسوم أو شراء اشتراك أو إيداع/تحويل/سحب أموال، ولا بإرسال بيانات الدفع أو كلمات المرور. استبعد أي فرصة تتطلب دفعًا للوصول أو التقديم، وأي عمل لا تتوفر طريقة موثوقة لاستلام مستحقاته في بلد المالك. لا تختلق خبرة أو شهادات أو نماذج أو إتقان لغة أو إنجازًا. لا تقدم عرضًا ملزمًا بسعر أو موعد غير محدد مسبقًا، ولا تقبل نطاقًا غامضًا أو غير قابل للتنفيذ؛ اطلب تدخل أحمد فقط عند الحاجة إلى تحقق هوية أو CAPTCHA أو ربط حساب أو قرار مالي/تعاقدي غير محدد. لا تستخدم إلا أداة موصولة ومصرحًا بها رسميًا، وإن لم يوجد موصل فجهز المسودة وأخبر أحمد أن الإرسال يدوي. أمر أحمد «ابدأ العمل» تفويض لبدء المعالجة السحابية لهذه الفرصة، وليس دليلًا على قبول العميل أو توقيع عقد؛ لا تدّع قبولًا أو تقديمًا أو تسليمًا ما لم تؤكده أداة أو واقعة موثقة.
+احفظ سحابيًا فقط بعد أن يصدر أحمد أمر البدء وتبدأ المعالجة السحابية فعليًا. لا تحفظ نتائج البحث أو الفرص التي لم يبدأ العمل عليها. يمكن إظهار نتائج البحث مؤقتًا في الجلسة ثم التخلص منها. عند بدء المهمة احفظ متطلباتها وحالتها والمخرج الجاري في RAM_DATA_DIR وتابعها حتى الإغلاق؛ لا تسجلها منجزة أو مستحقًا مقبوضًا إلا بدليل وتأكيد مناسب. في النسخة الحالية لا يوجد موصل تقديم رسمي لمنصات العمل ولا مجدول بحث خلفي؛ لا تدّع اختيار الفرص أو التقديم عليها آليًا حتى يُنفذ ذلك فعليًا.
 لا تعرض أبدًا وسومًا داخلية مثل User Safety أو Response Safety أو تصنيفات safe/unsafe؛ أجب المستخدم مباشرة بلغة طبيعية.
 ساعد في البرمجة والتصميم والترجمة والبحث والأعمال الهندسية والشحن واللوجستيات والعقارات والتجارة.
 ملف إنجاز القابضة المحلي: شركة خدمات وتنسيق أعمال متعددة المجالات، وتاريخ العمل منذ 2020 معلومة قدمها مالكها. المجالات: الهندسة ومخططات المساحة والديكور والتصميم؛ المواقع والبرمجة؛ الاستشارات والأبحاث ودراسات المشاريع التجارية وتطوير المشاريع الاستثمارية؛ الترجمة؛ تنسيق الشحن؛ والوساطة في التوريد والاستفسارات التجارية للطاقة وفق الأنظمة. لا توجد في البيانات الحالية شهادات تسجيل أو مراجع عملاء أو نماذج أعمال موثقة؛ لا تخترعها. إذا طلب المالك ردًا على استفسار شركة، جهّز مسودة مهنية من هذه المعلومات واطلب مراجعته؛ لا تدّع إرسالها.
