@@ -32,6 +32,9 @@ test('free connectors query public APIs without credentials and only return cont
   assert.ok(calls.every(call => !('Authorization' in call.options.headers)));
   assert.deepEqual(answer.results.map(x => x.source), ['Himalayas', 'Jobicy', 'Remotive', 'RemoteJobs.org', 'RemoteJobs.org']);
   assert.ok(answer.results.every(x => x.workType === 'REMOTE_CONTRACT_LISTING' && x.verifiedEmploymentType));
+  assert.ok(answer.results.some(x => x.domains.some(domain => domain.id === 'graphic_design_ads')));
+  const designResult = answer.results.find(x => x.domains.some(domain => domain.id === 'graphic_design_ads'));
+  assert.equal(designResult.domains.find(domain => domain.id === 'graphic_design_ads').execution, 'produce_draft_with_human_review');
   assert.equal(answer.results[0].employmentType, 'Contractor');
   assert.match(new URL(calls[0].url).searchParams.get('q'), /design/i);
   assert.equal(getFreeOpportunitySources().length, 4);
@@ -40,6 +43,23 @@ test('free connectors query public APIs without credentials and only return cont
   assert.ok(answer.results.every(item => item.feeStatus === 'unverified_at_destination' && item.upfrontFeeEvidence === null));
   assert.equal(new URL(calls[3].url).searchParams.get('type'), 'contract');
   assert.equal(new URL(calls[4].url).searchParams.get('type'), 'freelance');
+});
+
+test('broad domain labels separate direct work from brokerage lead research', async () => {
+  resetFreeOpportunityCacheForTests();
+  const fetchImpl = async url => String(url).startsWith('https://himalayas.app/')
+    ? new Response(JSON.stringify({jobs:[
+        {guid:'ship',title:'Freight and logistics coordinator',employmentType:'Contractor',applicationLink:'https://himalayas.app/jobs/ship',excerpt:'Coordinate air and sea cargo'},
+        {guid:'cad',title:'3D CAD engineer',employmentType:'Contractor',applicationLink:'https://himalayas.app/jobs/cad',excerpt:'Create engineering models'}
+      ]}), {status:200})
+    : String(url).startsWith('https://jobicy.com/')
+      ? new Response(JSON.stringify({success:true,jobs:[]}), {status:200})
+      : String(url).startsWith('https://remotive.com/')
+        ? new Response(JSON.stringify({jobs:[]}), {status:200})
+        : new Response(JSON.stringify({data:[]}), {status:200});
+  const answer = await searchFreeOpportunityFeeds('', {fetchImpl});
+  assert.ok(answer.results.find(item => item.title.includes('Freight')).domains.some(domain => domain.execution === 'lead_research_and_coordination_only'));
+  assert.ok(answer.results.find(item => item.title.includes('CAD')).domains.some(domain => domain.execution === 'draft_only_requires_qualified_review'));
 });
 
 test('provider failures are isolated and cache is reused', async () => {

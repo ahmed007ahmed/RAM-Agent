@@ -11,6 +11,14 @@
 
 RAM labels these records `REMOTE_CONTRACT_LISTING`. It keeps the source and application URL, company, published employment type, optional salary and location, and a shortened plain-text description. Results with full-time employment types or invalid URLs are excluded. The salary is shown as source salary metadata and is not treated as a project budget.
 
+## Broad work domains and capability limits
+
+RAM assigns each result one or more domain labels so searches can cover translation, writing/editing, graphic design and advertising, website design/development, engineering/CAD/3D, logistics/freight, supplier sourcing, research/data, virtual assistance, customer support/sales, marketing/social media, video/audio, automation/QA, and tutoring. The labels are a discovery aid, not proof that RAM has the required external software, credentials, professional license, or enough client context to finish every job.
+
+Each label includes an execution mode. Routine digital deliverables are prepared as drafts for review; engineering/CAD/3D outputs require a qualified review; shipping and freight matching is limited to lead research and coordination, not carrier booking or handling cargo or money. Unclassified work is flagged for a capability check. RAM must skip work it cannot deliver honestly, safely, or with the tools available. A user must review scope, price, deadlines, and any platform commission before accepting a contract. Income and acceptance are not guaranteed.
+
+These four sources remain read-only job feeds. The new domain labels do not add new websites, unlock freelancer-side application APIs, or authorize RAM to submit proposals.
+
 The feeds are read-only: they discover and present listings; they do not create accounts, apply, contact employers, accept contracts, or process payments. The result card links to the original listing and states that fees/payment terms need review there. New and unselected search results stay in memory; they are not written to the cloud queue. Do not describe a listing as “free to apply” unless the original platform or employer explicitly confirms that no upfront fee, paid credit, subscription, or deposit is required. Any unclear or paid listing is skipped; the owner is never asked to pay to apply.
 
 ## Free-first rule

@@ -9,15 +9,48 @@ const cache = new Map();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const CACHE_MAX = 80;
 const MAX_QUERY = 160;
+// Discovery covers varied work, but RAM must not overstate what it can execute.
+// Regulated/high-consequence decisions stay outside automatic execution.
+const DOMAIN_RULES = Object.freeze([
+  {id:'translation', pattern:/ترجم|translation|translator|locali[sz]ation|proofread/i, execution:'draft_with_human_review'},
+  {id:'writing_content', pattern:/كتابة|تحرير|مقال|محتوى|copywrit|content|editing|editor/i, execution:'draft_with_human_review'},
+  {id:'graphic_design_ads', pattern:/تصميم|جرافيك|اعلان|إعلان|graphic|design|branding|banner|logo/i, execution:'produce_draft_with_human_review'},
+  {id:'web_design_development', pattern:/موقع|صفحة|ويب|برمج|website|web developer|frontend|backend|wordpress|shopify/i, execution:'produce_draft_with_human_review'},
+  {id:'engineering_cad_3d', pattern:/هندس|cad|معماري|مخطط|3d|modeling|render|solidworks|autocad|revit/i, execution:'draft_only_requires_qualified_review'},
+  {id:'logistics_freight', pattern:/لوجست|شحن|حاوي|تخليص|logistics|shipping|freight|cargo|dispatch/i, execution:'lead_research_and_coordination_only'},
+  {id:'supplier_sourcing', pattern:/توريد|مورد|شراء|مشتريات|sourcing|procurement|supplier|vendor/i, execution:'research_and_comparison_with_human_review'},
+  {id:'research_data', pattern:/بحث|دراسة|بيانات|research|market analysis|data analysis|data entry|spreadsheet|excel/i, execution:'research_or_draft_with_human_review'},
+  {id:'virtual_assistance', pattern:/مساعد افتراضي|إدارة بريد|مواعيد|virtual assistant|administrative|email management|scheduling/i, execution:'draft_with_human_review'},
+  {id:'customer_support_sales', pattern:/خدمة العملاء|دعم العملاء|مبيعات|sales|customer support|customer service|lead generation/i, execution:'draft_with_human_review'},
+  {id:'marketing_social_media', pattern:/تسويق|سوشال|وسائل التواصل|marketing|social media|seo|advertising/i, execution:'produce_draft_with_human_review'},
+  {id:'video_audio', pattern:/مونتاج|فيديو|صوت|تحرير فيديو|video editing|audio editing|subtitles|captioning/i, execution:'draft_with_human_review'},
+  {id:'automation_qa', pattern:/أتمتة|اختبار برمجيات|ضمان الجودة|automation|qa tester|software testing|workflow/i, execution:'draft_with_human_review'},
+  {id:'education_tutoring', pattern:/تدريس|تعليم|تدريب|tutoring|teaching|course|instruction/i, execution:'draft_with_human_review'}
+]);
 const TERMS = [
-  [/ترجم|ترجمة|لغوي|translation/i, 'translation'],
-  [/تصميم|جرافيك|اعلان|إعلان|graphic|design/i, 'design'],
-  [/هندس|cad|معماري|مخطط/i, 'engineering'],
-  [/موقع|صفحة|ويب|برمج|website|web developer/i, 'web development'],
-  [/لوجست|شحن|حاوي|تخليص|logistics|shipping/i, 'logistics'],
-  [/توريد|مورد|شراء|مشتريات|sourcing|procurement/i, 'sourcing'],
-  [/بحث|دراسة|research/i, 'research']
+  [/ترجم|ترجمة|لغوي|translation|translator/i, 'translation translator'],
+  [/كتابة|تحرير|مقال|محتوى|copywriting|content/i, 'writing content'],
+  [/تصميم|جرافيك|اعلان|إعلان|graphic|design|branding/i, 'design'],
+  [/هندس|cad|معماري|مخطط|ثلاثي الأبعاد|3d|modeling/i, 'engineering cad 3d'],
+  [/موقع|صفحة|ويب|برمج|website|web developer|wordpress/i, 'web development'],
+  [/لوجست|شحن|حاوي|تخليص|logistics|shipping|freight|cargo/i, 'logistics freight'],
+  [/توريد|مورد|شراء|مشتريات|sourcing|procurement|supplier/i, 'supplier sourcing'],
+  [/بحث|دراسة|research|تحليل بيانات|data entry/i, 'research data'],
+  [/مساعد افتراضي|إدارة بريد|مواعيد|virtual assistant/i, 'virtual assistance'],
+  [/خدمة العملاء|دعم العملاء|مبيعات|sales|customer support/i, 'customer support sales'],
+  [/تسويق|سوشال|وسائل التواصل|marketing|social media/i, 'marketing social media'],
+  [/مونتاج|فيديو|صوت|video editing|audio editing|subtitles/i, 'video audio'],
+  [/أتمتة|اختبار برمجيات|automation|qa tester|workflow/i, 'automation qa'],
+  [/تدريس|تعليم|تدريب|tutoring|teaching/i, 'education tutoring']
 ];
+
+function classifyOpportunity(job) {
+  const text = `${job.title || ''} ${job.snippet || ''}`;
+  const matches = DOMAIN_RULES.filter(rule => rule.pattern.test(text));
+  return matches.length
+    ? matches.map(({id, execution}) => ({id, execution}))
+    : [{id:'other_or_unclassified', execution:'needs_manual_capability_check'}];
+}
 
 function cleanQuery(value) {
   let text = String(value || '').slice(0, 2000);
@@ -228,7 +261,7 @@ export async function searchFreeOpportunityFeeds(query, {maxResults = 10, fetchI
     if (seen.has(item.url)) return false;
     seen.add(item.url); return true;
   });
-  return {query: search, results: unique.slice(0, limit).map((item, index) => ({...item, id: index + 1, retrievedAt: new Date().toISOString()})), errors, sources: getFreeOpportunitySources()};
+  return {query: search, results: unique.slice(0, limit).map((item, index) => ({...item, id: index + 1, domains: classifyOpportunity(item), retrievedAt: new Date().toISOString()})), errors, sources: getFreeOpportunitySources()};
 }
 
 export function resetFreeOpportunityCacheForTests() { cache.clear(); }
