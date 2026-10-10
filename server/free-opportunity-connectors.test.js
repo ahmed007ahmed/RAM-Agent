@@ -11,20 +11,35 @@ test('free connectors query public APIs without credentials and only return cont
       {guid:'h1',title:'CAD Contractor',companyName:'A',employmentType:'Contractor',applicationLink:'https://himalayas.app/jobs/1',excerpt:'CAD plans'},
       {guid:'h2',title:'CAD Employee',employmentType:'Full Time',applicationLink:'https://himalayas.app/jobs/2'}
     ]}), {status:200});
-    return new Response(JSON.stringify({success:true,jobs:[
+    if (String(url).startsWith('https://jobicy.com/')) return new Response(JSON.stringify({success:true,jobs:[
       {id:7,jobTitle:'Freelance web designer',companyName:'B',jobType:['Freelance'],url:'https://jobicy.com/jobs/7',jobExcerpt:'Website design'},
       {id:8,jobTitle:'Staff designer',jobType:['Full-Time'],url:'https://jobicy.com/jobs/8'}
     ]}), {status:200});
+    if (String(url).startsWith('https://remotejobs.org/')) {
+      const type = new URL(url).searchParams.get('type');
+      return new Response(JSON.stringify({data:[
+        {id:`r-${type}`,title:`${type} logo designer`,type,company:{name:'D'},url:`https://remotejobs.org/remote-jobs/${type}`,apply_url:`https://remotejobs.org/apply/${type}`,description:'Design contract',location:'Worldwide',salary_min:20}
+      ]}), {status:200});
+    }
+    return new Response(JSON.stringify({jobs:[
+      {id:9,title:'Design Contractor',company_name:'C',job_type:'contract',url:'https://remotive.com/remote-jobs/design/9',description:'Remote design work'},
+      {id:10,title:'Full-time designer',job_type:'full_time',url:'https://remotive.com/remote-jobs/design/10'}
+    ]}), {status:200});
   };
   const answer = await searchFreeOpportunityFeeds('مشروع تصميم site:upwork.com jobs', {fetchImpl});
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 5);
   assert.ok(calls.every(call => call.options.headers.Accept === 'application/json'));
   assert.ok(calls.every(call => !('Authorization' in call.options.headers)));
-  assert.deepEqual(answer.results.map(x => x.source), ['Himalayas', 'Jobicy']);
+  assert.deepEqual(answer.results.map(x => x.source), ['Himalayas', 'Jobicy', 'Remotive', 'RemoteJobs.org', 'RemoteJobs.org']);
   assert.ok(answer.results.every(x => x.workType === 'REMOTE_CONTRACT_LISTING' && x.verifiedEmploymentType));
   assert.equal(answer.results[0].employmentType, 'Contractor');
   assert.match(new URL(calls[0].url).searchParams.get('q'), /design/i);
-  assert.equal(getFreeOpportunitySources().length, 2);
+  assert.equal(getFreeOpportunitySources().length, 4);
+  assert.ok(getFreeOpportunitySources().every(source => source.accessCost === 'free_public_search'));
+  assert.ok(getFreeOpportunitySources().every(source => source.applicationCost === 'unverified_per_listing' && source.neverPayToApply));
+  assert.ok(answer.results.every(item => item.feeStatus === 'unverified_at_destination' && item.upfrontFeeEvidence === null));
+  assert.equal(new URL(calls[3].url).searchParams.get('type'), 'contract');
+  assert.equal(new URL(calls[4].url).searchParams.get('type'), 'freelance');
 });
 
 test('provider failures are isolated and cache is reused', async () => {
@@ -33,6 +48,8 @@ test('provider failures are isolated and cache is reused', async () => {
   const fetchImpl = async url => {
     calls++;
     if (String(url).startsWith('https://himalayas.app/')) throw new Error('offline');
+    if (String(url).startsWith('https://remotive.com/')) return new Response(JSON.stringify({jobs:[]}), {status:200});
+    if (String(url).startsWith('https://remotejobs.org/')) return new Response(JSON.stringify({data:[]}), {status:200});
     return new Response(JSON.stringify({success:true,jobs:[{id:1,jobTitle:'Contract translator',jobType:['Contract'],url:'https://jobicy.com/jobs/1'}]}), {status:200});
   };
   const first = await searchFreeOpportunityFeeds('translator', {fetchImpl});
@@ -40,14 +57,18 @@ test('provider failures are isolated and cache is reused', async () => {
   assert.equal(first.errors.length, 1);
   assert.equal(first.results.length, 1);
   assert.equal(second.results.length, 1);
-  assert.equal(calls, 3);
+  assert.equal(calls, 6);
 });
 
 test('invalid URLs and non-contract listings are excluded', async () => {
   resetFreeOpportunityCacheForTests();
   const fetchImpl = async url => String(url).startsWith('https://himalayas.app/')
     ? new Response(JSON.stringify({jobs:[{title:'Contractor',employmentType:'Contractor',applicationLink:'javascript:alert(1)'}]}), {status:200})
-    : new Response(JSON.stringify({jobs:[{id:2,jobTitle:'Full-time engineer',jobType:['Full-Time'],url:'https://jobicy.com/jobs/2'}]}), {status:200});
+    : String(url).startsWith('https://jobicy.com/')
+      ? new Response(JSON.stringify({jobs:[{id:2,jobTitle:'Full-time engineer',jobType:['Full-Time'],url:'https://jobicy.com/jobs/2'}]}), {status:200})
+      : String(url).startsWith('https://remotive.com/')
+        ? new Response(JSON.stringify({jobs:[{id:3,title:'Full-time engineer',job_type:'full_time',url:'https://remotive.com/remote-jobs/3'}]}), {status:200})
+        : new Response(JSON.stringify({data:[{id:'bad',title:'Bad URL freelancer',type:'freelance',url:'javascript:alert(1)'}]}), {status:200});
   const answer = await searchFreeOpportunityFeeds('engineer', {fetchImpl});
   assert.equal(answer.results.length, 0);
 });
