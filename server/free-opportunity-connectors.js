@@ -1,31 +1,36 @@
 const SOURCES = Object.freeze([
-  {id: 'himalayas', name: 'Himalayas', endpoint: 'https://himalayas.app/jobs/api/search', authentication: 'none', accessCost: 'free_public_search', applicationCost: 'unverified_per_listing', types: ['Contractor', 'Temporary']},
-  {id: 'jobicy', name: 'Jobicy', endpoint: 'https://jobicy.com/api/v2/remote-jobs', authentication: 'none', accessCost: 'free_public_search', applicationCost: 'unverified_per_listing', types: ['contract', 'freelance']},
-  {id: 'remotive', name: 'Remotive', endpoint: 'https://remotive.com/api/remote-jobs', authentication: 'none', accessCost: 'free_public_search', applicationCost: 'unverified_per_listing', types: ['contract', 'freelance']},
-  {id: 'remotejobs', name: 'RemoteJobs.org', endpoint: 'https://remotejobs.org/api/v1/jobs', authentication: 'none', accessCost: 'free_public_search', applicationCost: 'unverified_per_listing', types: ['contract', 'freelance']}
+  {id: 'himalayas', name: 'Himalayas', endpoint: 'https://himalayas.app/jobs/api/search', docsUrl: 'https://himalayas.app/docs/remote-jobs-api', authentication: 'none', accessCost: 'free_public_search', applicationCost: 'unverified_per_listing', types: ['Contractor', 'Temporary']},
+  {id: 'jobicy', name: 'Jobicy', endpoint: 'https://jobicy.com/api/v2/remote-jobs', docsUrl: 'https://jobicy.com/jobs-rss-feed', authentication: 'none', accessCost: 'free_public_search', applicationCost: 'unverified_per_listing', types: ['contract', 'freelance']},
+  {id: 'remotive', name: 'Remotive', endpoint: 'https://remotive.com/api/remote-jobs', docsUrl: 'https://remotive.com/remote-jobs/api', authentication: 'none', accessCost: 'free_public_search', applicationCost: 'unverified_per_listing', types: ['contract', 'freelance']},
+  {id: 'remotejobs', name: 'RemoteJobs.org', endpoint: 'https://remotejobs.org/api/v1/jobs', docsUrl: 'https://remotejobs.org/api-access', authentication: 'none', accessCost: 'free_public_search', applicationCost: 'unverified_per_listing', types: ['contract', 'freelance']}
 ]);
 
 const cache = new Map();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const CACHE_MAX = 80;
 const MAX_QUERY = 160;
-// Discovery covers varied work, but RAM must not overstate what it can execute.
-// Regulated/high-consequence decisions stay outside automatic execution.
+// These labels guide the agent's attempt; they are not hard exclusions.
 const DOMAIN_RULES = Object.freeze([
-  {id:'translation', pattern:/ترجم|translation|translator|locali[sz]ation|proofread/i, execution:'draft_with_human_review'},
-  {id:'writing_content', pattern:/كتابة|تحرير|مقال|محتوى|copywrit|content|editing|editor/i, execution:'draft_with_human_review'},
-  {id:'graphic_design_ads', pattern:/تصميم|جرافيك|اعلان|إعلان|graphic|design|branding|banner|logo/i, execution:'produce_draft_with_human_review'},
-  {id:'web_design_development', pattern:/موقع|صفحة|ويب|برمج|website|web developer|frontend|backend|wordpress|shopify/i, execution:'produce_draft_with_human_review'},
-  {id:'engineering_cad_3d', pattern:/هندس|cad|معماري|مخطط|3d|modeling|render|solidworks|autocad|revit/i, execution:'draft_only_requires_qualified_review'},
-  {id:'logistics_freight', pattern:/لوجست|شحن|حاوي|تخليص|logistics|shipping|freight|cargo|dispatch/i, execution:'lead_research_and_coordination_only'},
-  {id:'supplier_sourcing', pattern:/توريد|مورد|شراء|مشتريات|sourcing|procurement|supplier|vendor/i, execution:'research_and_comparison_with_human_review'},
-  {id:'research_data', pattern:/بحث|دراسة|بيانات|research|market analysis|data analysis|data entry|spreadsheet|excel/i, execution:'research_or_draft_with_human_review'},
-  {id:'virtual_assistance', pattern:/مساعد افتراضي|إدارة بريد|مواعيد|virtual assistant|administrative|email management|scheduling/i, execution:'draft_with_human_review'},
-  {id:'customer_support_sales', pattern:/خدمة العملاء|دعم العملاء|مبيعات|sales|customer support|customer service|lead generation/i, execution:'draft_with_human_review'},
-  {id:'marketing_social_media', pattern:/تسويق|سوشال|وسائل التواصل|marketing|social media|seo|advertising/i, execution:'produce_draft_with_human_review'},
-  {id:'video_audio', pattern:/مونتاج|فيديو|صوت|تحرير فيديو|video editing|audio editing|subtitles|captioning/i, execution:'draft_with_human_review'},
-  {id:'automation_qa', pattern:/أتمتة|اختبار برمجيات|ضمان الجودة|automation|qa tester|software testing|workflow/i, execution:'draft_with_human_review'},
-  {id:'education_tutoring', pattern:/تدريس|تعليم|تدريب|tutoring|teaching|course|instruction/i, execution:'draft_with_human_review'}
+  {id:'translation', pattern:/ترجم|translation|translator|locali[sz]ation|proofread/i, execution:'ai_execute_with_available_tools'},
+  {id:'writing_content', pattern:/كتابة|تحرير|مقال|محتوى|copywrit|content|editing|editor/i, execution:'ai_execute_with_available_tools'},
+  {id:'graphic_design_ads', pattern:/تصميم|جرافيك|اعلان|إعلان|graphic|design|branding|banner|logo/i, execution:'ai_execute_with_available_tools'},
+  {id:'web_design_development', pattern:/موقع|صفحة|ويب|برمج|website|web developer|frontend|backend|wordpress|shopify/i, execution:'ai_execute_with_available_tools'},
+  {id:'engineering_cad_3d', pattern:/هندس|cad|معماري|مخطط|3d|modeling|render|solidworks|autocad|revit/i, execution:'ai_execute_with_tools_and_validate_output'},
+  {id:'logistics_freight', pattern:/لوجست|شحن|حاوي|تخليص|logistics|shipping|freight|cargo|dispatch/i, execution:'ai_research_match_quote_and_coordinate'},
+  {id:'supplier_sourcing', pattern:/توريد|مورد|شراء|مشتريات|sourcing|procurement|supplier|vendor/i, execution:'ai_find_compare_and_coordinate'},
+  {id:'research_data', pattern:/بحث|دراسة|بيانات|research|market analysis|data analysis|data entry|spreadsheet|excel/i, execution:'ai_execute_with_available_tools'},
+  {id:'virtual_assistance', pattern:/مساعد افتراضي|إدارة بريد|مواعيد|virtual assistant|administrative|email management|scheduling/i, execution:'ai_execute_with_connected_account_permissions'},
+  {id:'customer_support_sales', pattern:/خدمة العملاء|دعم العملاء|مبيعات|sales|customer support|customer service|lead generation/i, execution:'ai_draft_and_respond_with_authorized_account'},
+  {id:'marketing_social_media', pattern:/تسويق|سوشال|وسائل التواصل|marketing|social media|seo|advertising/i, execution:'ai_execute_with_available_tools'},
+  {id:'video_audio', pattern:/مونتاج|فيديو|صوت|تحرير فيديو|video editing|audio editing|subtitles|captioning/i, execution:'ai_execute_with_available_tools'},
+  {id:'automation_qa', pattern:/أتمتة|اختبار برمجيات|ضمان الجودة|automation|qa tester|software testing|workflow/i, execution:'ai_execute_with_available_tools'},
+  {id:'education_tutoring', pattern:/تدريس|تعليم|تدريب|tutoring|teaching|course|instruction/i, execution:'ai_execute_with_available_tools'},
+  {id:'ecommerce', pattern:/تجارة إلكترونية|متجر|منتجات|e-?commerce|product listing|catalog|amazon|ebay/i, execution:'ai_research_create_and_manage_with_access'},
+  {id:'real_estate', pattern:/عقارات|إيجار|بيع عقار|real estate|property|rental|listing/i, execution:'ai_research_match_and_coordinate'},
+  {id:'travel_hospitality', pattern:/سفر|سياحة|فندق|حجوزات|travel|tourism|hotel|booking|hospitality/i, execution:'ai_research_plan_and_book_with_authorized_access'},
+  {id:'recruiting_hr', pattern:/توظيف|موارد بشرية|recruiting|recruiter|human resources|hr assistant/i, execution:'ai_search_screen_and_coordinate'},
+  {id:'legal_document_support', pattern:/عقود|مستندات قانونية|legal document|contract review|paralegal/i, execution:'ai_draft_documents_for_professional_review'},
+  {id:'finance_admin', pattern:/مسك دفاتر|فواتير|محاسبة إدارية|bookkeeping|invoicing|accounting assistant/i, execution:'ai_assist_with_records_and_reconcile_for_review'}
 ]);
 const TERMS = [
   [/ترجم|ترجمة|لغوي|translation|translator/i, 'translation translator'],
@@ -41,7 +46,13 @@ const TERMS = [
   [/تسويق|سوشال|وسائل التواصل|marketing|social media/i, 'marketing social media'],
   [/مونتاج|فيديو|صوت|video editing|audio editing|subtitles/i, 'video audio'],
   [/أتمتة|اختبار برمجيات|automation|qa tester|workflow/i, 'automation qa'],
-  [/تدريس|تعليم|تدريب|tutoring|teaching/i, 'education tutoring']
+  [/تدريس|تعليم|تدريب|tutoring|teaching/i, 'education tutoring'],
+  [/تجارة إلكترونية|متجر|منتجات|e-?commerce|product listing|catalog/i, 'ecommerce product listing'],
+  [/عقارات|إيجار|بيع عقار|real estate|property|rental/i, 'real estate property'],
+  [/سفر|سياحة|فندق|حجوزات|travel|tourism|hotel|booking/i, 'travel hospitality'],
+  [/توظيف|موارد بشرية|recruiting|recruiter|human resources/i, 'recruiting human resources'],
+  [/عقود|مستندات قانونية|legal document|contract review|paralegal/i, 'legal document support'],
+  [/مسك دفاتر|فواتير|محاسبة إدارية|bookkeeping|invoicing|accounting assistant/i, 'finance admin']
 ];
 
 function classifyOpportunity(job) {
@@ -49,7 +60,7 @@ function classifyOpportunity(job) {
   const matches = DOMAIN_RULES.filter(rule => rule.pattern.test(text));
   return matches.length
     ? matches.map(({id, execution}) => ({id, execution}))
-    : [{id:'other_or_unclassified', execution:'needs_manual_capability_check'}];
+    : [{id:'other_or_unclassified', execution:'ai_assess_then_attempt_with_available_tools'}];
 }
 
 function cleanQuery(value) {

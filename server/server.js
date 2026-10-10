@@ -251,7 +251,7 @@ async function webSearch(query, maxResults = 8, {fresh = false} = {}) {
 }
 
 app.post('/integrations/search/test',async(_req,res)=>{
-  try{const result=await searchFreeOpportunityFeeds('remote contract design', {maxResults:5});const connected=result.sources.filter(source=>!result.errors.some(error=>error.source===source.name)).length;return res.status(connected?200:502).json({ok:connected>0,provider:'Himalayas + Jobicy (free public APIs)',resultCount:result.results.length,connectedSources:connected,sourceErrors:result.errors,checkedAt:new Date().toISOString()});}
+  try{const result=await searchFreeOpportunityFeeds('remote contract design', {maxResults:5});const connected=result.sources.filter(source=>!result.errors.some(error=>error.source===source.name)).length;return res.status(connected?200:502).json({ok:connected>0,provider:'Himalayas + Jobicy + Remotive + RemoteJobs.org (free public APIs)',resultCount:result.results.length,connectedSources:connected,sourceErrors:result.errors,checkedAt:new Date().toISOString()});}
   catch(error){return res.status(502).json({ok:false,error:'تعذر الاتصال بمصادر الفرص المجانية الآن.'});}
 });
 
