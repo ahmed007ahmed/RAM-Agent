@@ -384,7 +384,13 @@ app.post('/automation/search',async(req,res)=>{
 
 const leadSearchCategories={
   DESIGN:'companies seeking freelance CAD engineering architectural design website development landing pages graphic design advertising project request',
-  FREIGHT:'shipper cargo owner container available freight request quote land sea air shipping company logistics buyer shipment',
+  // Freight brokerage is a two-sided lead search: find public shipper RFQs
+  // and carrier/forwarder partnership programs separately. A result is only
+  // a lead, never proof of a quote, agreement, or commission.
+  FREIGHT:[
+    {leadSide:'SHIPPER',query:'shipper cargo owner publicly requests freight shipping quote RFQ cargo transport sea air road container shipment request'},
+    {leadSide:'CARRIER',query:'freight forwarder shipping company carrier agent referral partner program commission independent sales agent cargo logistics partnership'}
+  ],
   SOURCING:'buyer product sourcing request for quotation RFQ importer seeking supplier wholesale trader procurement request',
   OTHER:'remote freelance Arabic translation research writing client request paid project'
 };
@@ -394,14 +400,19 @@ async function runLeadSearch(categories=Object.keys(leadSearchCategories)){
   if(!chosen.length)throw Object.assign(new Error('اختر قسمًا معروفًا واحدًا على الأقل.'),{status:400});
   const results=[],failures=[];
   for(const category of chosen){
-    try{
-      const found=await webSearch(leadSearchCategories[category],5,{fresh:true});
-      results.push(...found.map(result=>({...result,category,leadType:category==='FREIGHT'?'SHIPPER_OR_CARRIER':category==='SOURCING'?'BUYER_OR_SUPPLIER':category==='DESIGN'?'SERVICE_BUYER':'REMOTE_WORK_REQUEST'})));
-    }catch(error){failures.push({category,error:`تعذر البحث (${error.status||'اتصال'})`});}
+    const searches=Array.isArray(leadSearchCategories[category])
+      ? leadSearchCategories[category]
+      : [{query:leadSearchCategories[category],leadSide:null}];
+    for(const search of searches){
+      try{
+        const found=await webSearch(search.query,5,{fresh:true});
+        results.push(...found.map(result=>({...result,category,leadSide:search.leadSide||undefined,leadType:category==='FREIGHT'?search.leadSide:category==='SOURCING'?'BUYER_OR_SUPPLIER':category==='DESIGN'?'SERVICE_BUYER':'REMOTE_WORK_REQUEST',commissionStatus:'NOT_AGREED',contactStatus:'NOT_CONTACTED',verified:false})));
+      }catch(error){failures.push({category,leadSide:search.leadSide||undefined,error:`تعذر البحث (${error.status||'اتصال'})`});}
+    }
   }
-  const unique=[...new Map(results.map(item=>[item.url,item])).values()];
+  const unique=[...new Map(results.map(item=>[`${item.leadSide||item.category}:${item.url}`,item])).values()];
   const saved=await cloudQueues.recordSearch({mode:'LEAD',categories:chosen,results:unique,failures});
-  return {ok:failures.length===0,realSearch:true,generatedAt:new Date().toISOString(),results:unique,counts:Object.fromEntries(Object.keys(QUEUE_CATEGORIES).map(code=>[code,unique.filter(x=>cloudQueues.categoryFor(x.category)===code).length])),failures,cloudQueue:saved,note:'نتائج البحث الأولية غير متحققة؛ راجع مصدر كل جهة قبل التواصل أو عرض عمولة.'};
+  return {ok:failures.length===0,realSearch:true,generatedAt:new Date().toISOString(),results:unique,counts:Object.fromEntries(Object.keys(QUEUE_CATEGORIES).map(code=>[code,unique.filter(x=>cloudQueues.categoryFor(x.category)===code).length])),failures,cloudQueue:saved,note:chosen.includes('FREIGHT')?'مسار وساطة الشحن يبحث عن أصحاب شحنات منشورين وشركات ناقلة/ملاحية كلٌ على حدة. النتائج مؤشرات عامة؛ لا تُعرض شحنة أو عمولة كمتفق عليها قبل التحقق وموافقة الطرفين وتوثيق أساس العمولة والتحقق من متطلبات البلد والمسار.':'نتائج البحث الأولية غير متحققة؛ راجع مصدر كل جهة قبل التواصل أو عرض عمولة.'};
 }
 app.post('/automation/leads/run',async(req,res)=>{
   try{const categories=Array.isArray(req.body?.categories)?req.body.categories:Object.keys(leadSearchCategories);return res.json(await runLeadSearch(categories));}
