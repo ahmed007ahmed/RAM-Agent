@@ -42,6 +42,7 @@ public class MainActivity extends Activity {
   @JavascriptInterface public void testCloudflare(){requestWorkflow("integrations/cloudflare/test","{}","cloudflareTestReply");}
   @JavascriptInterface public void testN8n(){requestWorkflow("integrations/n8n/test","{}","n8nTestReply");}
   @JavascriptInterface public void testSearch(){requestWorkflow("integrations/serper/test","{}","searchTestReply");}
+  @JavascriptInterface public void testFreeSources(){requestWorkflow("integrations/search/test","{}","freeSearchTestReply");}
   @JavascriptInterface public void testFirecrawl(){requestWorkflow("integrations/firecrawl/test","{}","firecrawlTestReply");}
   @JavascriptInterface public void testExa(){requestWorkflow("integrations/exa/test","{}","exaTestReply");}
   @JavascriptInterface public void prozStart(){requestWorkflow("integrations/proz/start","{}","prozStartReply");}
