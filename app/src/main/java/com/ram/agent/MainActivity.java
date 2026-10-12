@@ -41,7 +41,8 @@ public class MainActivity extends Activity {
   @JavascriptInterface public void checkCapabilities(){requestStatus("capabilities");}
   @JavascriptInterface public void testCloudflare(){requestWorkflow("integrations/cloudflare/test","{}","cloudflareTestReply");}
   @JavascriptInterface public void testN8n(){requestWorkflow("integrations/n8n/test","{}","n8nTestReply");}
-  @JavascriptInterface public void testSearch(){requestWorkflow("integrations/serper/test","{}","searchTestReply");}
+  @JavascriptInterface public void testSearch(){requestWorkflow("integrations/search/test","{}","freeOpportunityTestReply");}
+  @JavascriptInterface public void testSerper(){requestWorkflow("integrations/serper/test","{}","serperTestReply");}
   @JavascriptInterface public void testFirecrawl(){requestWorkflow("integrations/firecrawl/test","{}","firecrawlTestReply");}
   @JavascriptInterface public void testExa(){requestWorkflow("integrations/exa/test","{}","exaTestReply");}
   @JavascriptInterface public void testTwilio(){requestWorkflow("integrations/twilio/test","{}","twilioTestReply");}
