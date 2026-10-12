@@ -4,14 +4,27 @@ export function cloudflareAiConfigured(env = process.env) {
   return Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_API_TOKEN);
 }
 
-function responseText(data) {
-  const content = data?.choices?.[0]?.message?.content
-    ?? data?.result?.response
-    ?? data?.response
-    ?? data?.output_text;
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.map(part => typeof part === 'string' ? part : part?.text || '').join('\n');
+function textValue(value) {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(textValue).filter(Boolean).join('\n');
+  if (value && typeof value === 'object') {
+    for (const key of ['text', 'content', 'response', 'output_text', 'generated_text']) {
+      const text = textValue(value[key]);
+      if (text) return text;
+    }
+  }
   return '';
+}
+
+function responseText(data) {
+  const choice = data?.choices?.[0];
+  const message = choice?.message || choice?.delta || {};
+  return textValue(message.content ?? choice?.text)
+    || textValue(data?.result?.response)
+    || textValue(data?.response)
+    || textValue(data?.output_text)
+    || textValue(data?.output)
+    || textValue(data?.generated_text);
 }
 
 export async function cloudflareChat(messages, options = {}, env = process.env, fetchImpl = fetch) {
@@ -36,6 +49,11 @@ export async function cloudflareChat(messages, options = {}, env = process.env, 
     throw Object.assign(new Error(`Cloudflare AI: ${detail}`), {status:502,provider:'Cloudflare AI'});
   }
   const reply = cleanConversationalReply(responseText(data));
-  if (!reply) throw Object.assign(new Error('Cloudflare AI أعاد استجابة ناجحة بلا نص. تحقق من النموذج المحدد في CLOUDFLARE_AI_MODEL.'), {status:502,provider:'Cloudflare AI'});
+  if (!reply) {
+    const finishReason = String(data?.choices?.[0]?.finish_reason || 'غير متاح').slice(0,40);
+    const fields = Object.keys(data && typeof data === 'object' ? data : {}).slice(0,12).join(',') || 'لا توجد حقول';
+    throw Object.assign(new Error(`Cloudflare قبل الطلب لكنه لم يُرجع نصًا قابلًا للعرض (model=${model}, finish_reason=${finishReason}, response_fields=${fields}).`), {status:502,provider:'Cloudflare AI'});
+  }
   return {reply,model:data?.model || model,provider:'Cloudflare AI'};
 }
+
