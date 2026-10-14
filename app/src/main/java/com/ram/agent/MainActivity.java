@@ -40,6 +40,9 @@ public class MainActivity extends Activity {
   @JavascriptInterface public boolean setVoicePitch(String pitch){if(!Arrays.asList("low","normal","high").contains(pitch))return false;prefs.edit().putString("voice_pitch",pitch).commit();return true;}
   @JavascriptInterface public void checkCapabilities(){requestStatus("capabilities");}
   @JavascriptInterface public void testCloudflare(){requestWorkflow("integrations/cloudflare/test","{}","cloudflareTestReply");}
+  @JavascriptInterface public void testAIProvider(String provider){if(!Arrays.asList("anthropic","gemini","perplexity").contains(provider))return;requestWorkflow("integrations/ai/"+provider+"/test","{}","aiProviderTestReply");}
+  @JavascriptInterface public void testGamma(){requestWorkflow("integrations/gamma/test","{\"confirmed\":true}","gammaTestReply");}
+  @JavascriptInterface public void gammaStatus(String generationId){try{JSONObject body=new JSONObject();body.put("generationId",generationId);requestWorkflow("integrations/gamma/status",body.toString(),"gammaStatusReply");}catch(Exception ignored){}}
   @JavascriptInterface public void testN8n(){requestWorkflow("integrations/n8n/test","{}","n8nTestReply");}
   @JavascriptInterface public void testSearch(){requestWorkflow("integrations/serper/test","{}","searchTestReply");}
   @JavascriptInterface public void testFreeSources(){requestWorkflow("integrations/search/test","{}","freeSearchTestReply");}
