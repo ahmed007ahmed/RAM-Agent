@@ -4,8 +4,9 @@ export function n8nConfigured(env = process.env) {
 
 async function rejectedWebhookError(response, secret, action) {
   let detail = '';
+  let raw = '';
   try {
-    const raw = (await response.text()).slice(0, 1200);
+    raw = (await response.text()).slice(0, 1200);
     if (raw) {
       try {
         const data = JSON.parse(raw);
@@ -17,6 +18,11 @@ async function rejectedWebhookError(response, secret, action) {
       }
     }
   } catch { /* The status code is still useful if the body cannot be read. */ }
+  if (response.status === 404 && /no instance here/i.test(raw)) {
+    detail = 'عنوان n8n لا يصل إلى مثيل يعمل. تحقق من عنوان خدمة n8n واستعادتها أولًا، ثم انسخ Production Webhook URL من Workflow مفعّل إلى N8N_WEBHOOK_URL في Railway.';
+  } else if (response.status === 404 && /webhook.*(not registered|not found)|not registered.*webhook/i.test(raw)) {
+    detail = 'مسار Webhook غير موجود أو أن Workflow غير مفعّل. فعّل Workflow وانسخ Production Webhook URL الصحيح إلى Railway.';
+  }
   detail = String(detail)
     .replaceAll(secret, '[محجوب]')
     .replace(/Bearer\s+\S+/gi, 'Bearer [محجوب]')
