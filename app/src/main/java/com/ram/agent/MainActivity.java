@@ -7,7 +7,6 @@ public class MainActivity extends Activity {
  private WebView web;private SharedPreferences prefs;private TextToSpeech speech;private SpeechRecognizer voiceRecognizer;private MediaPlayer cloudPlayer;private final Handler voiceHandler=new Handler(Looper.getMainLooper());private boolean ready,dead,voiceSessionActive,voiceListening,voiceSpeaking;private volatile HttpURLConnection request,ttsRequest;private boolean busy;
  private static final int VOICE=31,EXPORT=32,NOTIFICATIONS=33,PROFILE=34,OUTPUT=35,CALL_CONTACT=36,VOICE_PERMISSION=37,PAYMENT_NOTIFICATIONS=38;
  private static final String DEFAULT_SERVER="https://ram-agent-production-2ee8.up.railway.app";
- private static final String ALTERNATE_SERVER="https://ram-agent-production-33c2.up.railway.app";
  private String pendingOutputText="",pendingEventKind="",pendingEventTitle="",pendingEventDetails="";private int pendingEventId=0;
  @Override public void onCreate(Bundle b){super.onCreate(b);prefs=getSharedPreferences("ram_business",MODE_PRIVATE);getWindow().setStatusBarColor(Color.rgb(8,13,24));getWindow().setNavigationBarColor(Color.rgb(8,13,24));getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
   android.widget.FrameLayout root=new android.widget.FrameLayout(this);web=new WebView(this);root.addView(web);setContentView(root);root.setOnApplyWindowInsetsListener((v,i)->{if(Build.VERSION.SDK_INT>=30){android.graphics.Insets bars=i.getInsets(WindowInsets.Type.systemBars()),ime=i.getInsets(WindowInsets.Type.ime());v.setPadding(bars.left,bars.top,bars.right,Math.max(bars.bottom,ime.bottom));}else v.setPadding(i.getSystemWindowInsetLeft(),i.getSystemWindowInsetTop(),i.getSystemWindowInsetRight(),i.getSystemWindowInsetBottom());return i;});root.requestApplyInsets();
@@ -41,9 +40,6 @@ public class MainActivity extends Activity {
   @JavascriptInterface public boolean setVoicePitch(String pitch){if(!Arrays.asList("low","normal","high").contains(pitch))return false;prefs.edit().putString("voice_pitch",pitch).commit();return true;}
   @JavascriptInterface public void checkCapabilities(){requestStatus("capabilities");}
   @JavascriptInterface public void testCloudflare(){requestWorkflow("integrations/cloudflare/test","{}","cloudflareTestReply");}
-  @JavascriptInterface public void testAIProvider(String provider){if(!Arrays.asList("anthropic","gemini","perplexity").contains(provider))return;requestWorkflow("integrations/ai/"+provider+"/test","{}","aiProviderTestReply");}
-  @JavascriptInterface public void testGamma(){requestWorkflow("integrations/gamma/test","{\"confirmed\":true}","gammaTestReply");}
-  @JavascriptInterface public void gammaStatus(String generationId){try{JSONObject body=new JSONObject();body.put("generationId",generationId);requestWorkflow("integrations/gamma/status",body.toString(),"gammaStatusReply");}catch(Exception ignored){}}
   @JavascriptInterface public void testN8n(){requestWorkflow("integrations/n8n/test","{}","n8nTestReply");}
   @JavascriptInterface public void testSearch(){requestWorkflow("integrations/serper/test","{}","searchTestReply");}
   @JavascriptInterface public void testFreeSources(){requestWorkflow("integrations/search/test","{}","freeSearchTestReply");}
@@ -100,10 +96,9 @@ public class MainActivity extends Activity {
   String primary=String.valueOf(configured==null?"":configured).trim();while(primary.endsWith("/"))primary=primary.substring(0,primary.length()-1);
   LinkedHashSet<String> bases=new LinkedHashSet<>();if(!primary.isEmpty())bases.add(primary);
   bases.add(DEFAULT_SERVER);
-  bases.add(ALTERNATE_SERVER);
   UnknownHostException dnsFailure=null;
-  for(String base:bases){for(int attempt=0;attempt<2;attempt++){try{URL url=new URL(base+"/"+endpoint);InetAddress.getAllByName(url.getHost());HttpURLConnection connection=(HttpURLConnection)url.openConnection();if(!base.equals(primary))prefs.edit().putString("server",base).apply();return connection;}catch(UnknownHostException e){dnsFailure=e;if(attempt==0)try{Thread.sleep(350);}catch(InterruptedException interrupted){Thread.currentThread().interrupt();throw new IOException("أُلغي الاتصال بخادم رام.",interrupted);}}}}
-  if(dnsFailure!=null)throw new IOException("تعذر العثور على عناوين خادم رام الثلاثة عبر DNS بعد إعادة المحاولة؛ تحقق من الإنترنت أو جرّب شبكة أخرى. لم يصل الطلب إلى Railway.",dnsFailure);
+  for(String base:bases){try{URL url=new URL(base+"/"+endpoint);InetAddress.getAllByName(url.getHost());HttpURLConnection connection=(HttpURLConnection)url.openConnection();if(!base.equals(primary))prefs.edit().putString("server",base).apply();return connection;}catch(UnknownHostException e){dnsFailure=e;}}
+  if(dnsFailure!=null)throw new IOException("تعذر العثور على عنوان خادم رام الأساسي والاحتياطي؛ تحقق من اتصال الإنترنت وحالة Railway.",dnsFailure);
   throw new IOException("تعذر الاتصال بخادم رام.");
  }
  private String get(String endpoint)throws Exception{HttpURLConnection c=null;try{String server=prefs.getString("server",DEFAULT_SERVER);c=openServerConnection(server,endpoint);c.setInstanceFollowRedirects(false);c.setConnectTimeout(15000);c.setReadTimeout(30000);c.setRequestMethod("GET");String token=prefs.getString("connection_token","");if(!token.isEmpty())c.setRequestProperty("Authorization","Bearer "+token);int code=c.getResponseCode();String raw=read(code>=200&&code<300?c.getInputStream():c.getErrorStream());if(code<200||code>=300){try{String reason=new JSONObject(raw).optString("error","");if(!reason.isEmpty())throw new IOException(reason);}catch(org.json.JSONException ignored){}throw new IOException("تعذر بدء ربط Gmail ("+code+")");}return raw;}finally{if(c!=null)c.disconnect();}}
