@@ -114,7 +114,49 @@ app.get('/gmail/oauth/start', (req, res) => {
   url.search = new URLSearchParams({client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: process.env.GMAIL_REDIRECT_URI, response_type: 'code', scope: GMAIL_SCOPES.join(' '), access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state}).toString();
   return res.json({ok: true, authorizationUrl: url.toString()});
 });
-app.post('/capabilities',(req,res)=>res.json({chatConfigured:Boolean((process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN)||(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')||process.env.OPENROUTER_API_KEY||(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')),chatProviders:[(process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN)?'Cloudflare Workers AI':'',(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')?'OpenAI API':'',process.env.OPENROUTER_API_KEY?'OpenRouter':'',(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')?'Gemini fallback':''].filter(Boolean),cloudflareConfigured:Boolean(process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN),openAIConfigured:Boolean(process.env.OPENAI_API_KEY),openAIEnabled:process.env.ALLOW_OPENAI_API==='true',searchConfigured:Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY),searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,makeSchedulerSupported:true,n8nConnected:n8nWebhookConfigured(),elevenLabsConfigured:Boolean(process.env.ELEVENLABS_API_KEY),elevenLabsEnabled:Boolean(process.env.ELEVENLABS_API_KEY&&process.env.ALLOW_PAID_TTS==='true'),gmailOAuthConfigured:gmailConfigured(),emailConnected:false,callsConnected:false,cloudJobsConnected:automationStorageReady(),paymentsEnabled:false,paidAiAllowed:false}));
+app.post('/capabilities',(req,res)=>{
+  const cloudflareConfigured=Boolean(process.env.CLOUDFLARE_ACCOUNT_ID&&process.env.CLOUDFLARE_API_TOKEN);
+  const searchConfigured=Boolean(process.env.SERPER_API_KEY||process.env.TAVILY_API_KEY);
+  const n8nConfigured=n8nWebhookConfigured();
+  const cloudStoragePersistent=automationStorageReady();
+  const elevenLabsConfigured=Boolean(process.env.ELEVENLABS_API_KEY);
+  const chatProviders=[cloudflareConfigured?'Cloudflare Workers AI':'',(process.env.OPENAI_API_KEY&&process.env.ALLOW_OPENAI_API==='true')?'OpenAI API':'',process.env.OPENROUTER_API_KEY?'OpenRouter':'',(process.env.GEMINI_API_KEY&&process.env.ALLOW_GEMINI_API==='true')?'Gemini fallback':''].filter(Boolean);
+  res.json({chatConfigured:chatProviders.length>0,chatProviders,cloudflareConfigured,cloudflareAiConfigured:cloudflareConfigured,openAIConfigured:Boolean(process.env.OPENAI_API_KEY),openAIEnabled:process.env.ALLOW_OPENAI_API==='true',searchConfigured,searchProvider:process.env.SERPER_API_KEY?'Serper':process.env.TAVILY_API_KEY?'Tavily':null,freeSearchConfigured:false,freeOpportunityApis:[],paidWebSearchConfigured:searchConfigured,makeSchedulerSupported:true,n8nConnected:n8nConfigured,n8nConfigured,elevenLabsConfigured,elevenLabsEnabled:Boolean(elevenLabsConfigured&&process.env.ALLOW_PAID_TTS==='true'),gmailOAuthConfigured:gmailConfigured(),emailConnected:false,callsConnected:false,cloudJobsConnected:cloudStoragePersistent,cloudStoragePersistent,paymentsEnabled:false,paidAiAllowed:false});
+});
+app.post('/integrations/serper/test',async (_req,res)=>{
+  try { const results=await webSearch('site:upwork.com/freelance-jobs freelance project',1); return res.json({ok:true,connected:true,provider:process.env.SERPER_API_KEY?'Serper':'Tavily',resultCount:results.length,checkedAt:new Date().toISOString(),message:'نجح اتصال البحث من خادم رام.'}); }
+  catch(error) { const status=error.code==='SEARCH_NOT_CONFIGURED'?503:(error.status===401||error.status===403?502:(error.status||502)); return res.status(status).json({ok:false,error:error.code==='SEARCH_NOT_CONFIGURED'?'أضف SERPER_API_KEY أو TAVILY_API_KEY إلى Railway.':error.status===401||error.status===403?'رفض مزود البحث المفتاح؛ تحقق من المفتاح في Railway.':error.status===429?'وصل حساب البحث إلى حد الطلبات.':'تعذر اتصال مزود البحث من Railway.'}); }
+});
+app.post('/integrations/search/test',async (_req,res)=>{
+  try { const results=await webSearch('site:upwork.com/freelance-jobs freelance project',1); return res.json({ok:true,connected:true,provider:process.env.SERPER_API_KEY?'Serper':'Tavily',resultCount:results.length,message:'نجح اتصال البحث الفعلي.'}); }
+  catch(error) { const status=error.code==='SEARCH_NOT_CONFIGURED'?503:(error.status||502); return res.status(status).json({ok:false,error:error.code==='SEARCH_NOT_CONFIGURED'?'لا يوجد مزود بحث مهيأ؛ أضف Serper أو Tavily إلى Railway.':'فشل اختبار البحث. تحقق من مفتاح مزود البحث وحصته.'}); }
+});
+app.post('/integrations/cloudflare/test',async (_req,res)=>{
+  if(!process.env.CLOUDFLARE_ACCOUNT_ID||!process.env.CLOUDFLARE_API_TOKEN)return res.status(503).json({ok:false,error:'أضف CLOUDFLARE_ACCOUNT_ID وCLOUDFLARE_API_TOKEN في Railway.'});
+  try { const result=await cloudflareWorkersAI([{role:'user',content:'أجب بكلمة: جاهز'}],{temperature:0,maxOutputTokens:48}); if(!String(result.reply||'').trim())return res.status(502).json({ok:false,error:'اتصل الخادم بـCloudflare لكن لم يصل نص رد صالح.'}); return res.json({ok:true,connected:true,provider:result.provider,model:result.model,message:'نجح اختبار محادثة Cloudflare AI.'}); }
+  catch(error) { const status=error.status===401||error.status===403?502:(error.status||502); return res.status(status).json({ok:false,error:error.status===401||error.status===403?'رفض Cloudflare الرمز أو صلاحية Workers AI. تحقق من حسابك ورمز API في Railway.':error.status===408||error.status===504?'انتهت مهلة Cloudflare قبل الرد. راجع اسم النموذج وحدود الخدمة في Railway.':'فشل اتصال Cloudflare AI؛ راجع حالة الحساب والنموذج في Railway.'}); }
+});
+app.post('/integrations/firecrawl/test',async (_req,res)=>{
+  const apiKey=String(process.env.FIRECRAWL_API_KEY||'').trim();
+  if(!apiKey)return res.status(503).json({ok:false,error:'أضف FIRECRAWL_API_KEY في Railway أولًا.'});
+  try {
+    const response=await fetch('https://api.firecrawl.dev/v2/scrape',{method:'POST',signal:AbortSignal.timeout(20000),headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},body:JSON.stringify({url:'https://example.com',formats:['markdown']})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok||data.success===false)return res.status(response.status===401||response.status===403?502:(response.status||502)).json({ok:false,error:response.status===401||response.status===403?'رفض Firecrawl المفتاح. تحقق من FIRECRAWL_API_KEY في Railway.':response.status===429?'وصل حساب Firecrawl إلى حد الاستخدام.':'فشل اختبار Firecrawl.'});
+    return res.json({ok:true,connected:true,provider:'Firecrawl',message:'نجح اختبار استخراج صفحة عامة.'});
+  } catch(error) {return res.status(502).json({ok:false,error:error.name==='TimeoutError'?'انتهت مهلة اتصال Firecrawl.':'تعذر الوصول إلى Firecrawl من Railway.'});}
+});
+app.post('/integrations/exa/test',async (_req,res)=>{
+  const apiKey=String(process.env.EXA_API_KEY||'').trim();
+  if(!apiKey)return res.status(503).json({ok:false,error:'أضف EXA_API_KEY في Railway أولًا.'});
+  try {
+    const response=await fetch('https://api.exa.ai/search',{method:'POST',signal:AbortSignal.timeout(20000),headers:{'x-api-key':apiKey,'Content-Type':'application/json'},body:JSON.stringify({query:'Exa API documentation',numResults:1,type:'fast'})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)return res.status(response.status===401||response.status===403?502:(response.status===429?429:502)).json({ok:false,error:response.status===401||response.status===403?'رفض Exa المفتاح. تحقق من EXA_API_KEY في Railway.':response.status===429?'وصل حساب Exa إلى حد الاستخدام.':'فشل اختبار Exa.'});
+    return res.json({ok:true,connected:true,provider:'Exa',resultCount:Array.isArray(data.results)?data.results.length:0,message:'نجح اتصال البحث بـExa.'});
+  } catch(error) {return res.status(502).json({ok:false,error:error.name==='TimeoutError'?'انتهت مهلة اتصال Exa.':'تعذر الوصول إلى Exa من Railway.'});}
+});
+
 app.post('/integrations/n8n/test', async (req,res) => {
   if (req.body?.confirmed !== true) return res.status(400).json({error:'أكد اختبار الاتصال من داخل رام أولًا.'});
   const webhook = String(process.env.N8N_WEBHOOK_URL || '').trim();
