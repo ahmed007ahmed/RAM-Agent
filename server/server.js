@@ -158,7 +158,6 @@ app.post('/integrations/exa/test',async (_req,res)=>{
 });
 
 app.post('/integrations/n8n/test', async (req,res) => {
-  if (req.body?.confirmed !== true) return res.status(400).json({error:'أكد اختبار الاتصال من داخل رام أولًا.'});
   const webhook = String(process.env.N8N_WEBHOOK_URL || '').trim();
   const secret = String(process.env.N8N_WEBHOOK_SECRET || '');
   let target;
