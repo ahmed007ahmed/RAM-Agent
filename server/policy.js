@@ -5,22 +5,20 @@ export function validToken(header, token) {
  return a.length===b.length&&timingSafeEqual(a,b);
 }
 export function maxOutputTokens(value) {const n=Number(value);return Number.isFinite(n)&&n>=128?Math.min(Math.floor(n),2048):1024;}
+export function checkedModel(env) {
+ const model=env.OPENROUTER_MODEL||'google/gemma-4-26b-a4b-it:free';
+ if(!model.endsWith(':free')&&(env.ALLOW_PAID_AI!=='true'||!env.RAM_API_TOKEN||env.RAM_API_TOKEN.length<24))throw Object.assign(new Error('Paid AI disabled; configure authentication and provider spending limits first'),{status:503});
+ return model;
+}
 export function rawSearchReply(results) {
  if(!results.length)return 'لم يُرجع محرك البحث نتائج لهذا الطلب.';
  return 'هذه نتائج بحث فعلية؛ تعذر تلخيصها بالنموذج الآن. تحقّق من صلاحية الإعلان والميزانية في المصدر قبل اختيار العمل.\n\n'+results.map((r,i)=>`${i+1}. ${r.title}\n${r.snippet}\n${r.url}`).join('\n\n');
 }
 
-// Some gateway/model combinations accidentally expose moderation labels as if
-// they were the assistant's answer. Never show those internal labels to RAM users.
-export function cleanConversationalReply(value) {
- const lines=String(value||'').split(/\r?\n/).filter(line=>!/^\s*(?:user|content|response)\s+safety\s*:\s*(?:safe|unsafe)\s*$/i.test(line));
- return lines.join('\n').replace(/\n{3,}/g,'\n\n').trim();
-}
-
 // Keep ordinary vacancies out of RAM's paid, remote freelance project feed.
 // We only accept clear project/freelance wording or a known freelance
 // marketplace URL, and reject employee-style positions even if they say remote.
-const freelanceMarketplaces = /(?:^|\.)(?:upwork\.com|fiverr\.com|freelancer\.com|guru\.com|peopleperhour\.com|proz\.com|toptal\.com|ureed\.com|mostaql\.com|khamsat\.com|truelancer\.com)$/i;
+const freelanceMarketplaces = /(?:^|\.)(?:upwork\.com|fiverr\.com|freelancer\.com|guru\.com|peopleperhour\.com|toptal\.com|ureed\.com|mostaql\.com|khamsat\.com|truelancer\.com)$/i;
 const freelanceSignals = /\b(?:freelanc(?:e|er|ing)|fixed[ -]price|project[ -]based|client project|project budget|submit (?:a )?proposal|gig|independent contractor|paid project|commission[- ]based)\b|مشروع مستقل|عمل حر|عمل مستقل|ميزانية المشروع|سعر ثابت|عمولة معلنة/i;
 const remoteSignals = /\b(?:remote|work from home|work from anywhere|online project|fully remote|remote contract)\b|عن بعد|من المنزل|عمل إلكتروني|عبر الإنترنت/i;
 const employmentSignals = /\b(?:full[ -]?time|part[ -]?time|permanent employee|employee position|job vacancy|job opening|employment opportunity|career opportunity|monthly salary|onsite|on[ -]site|hybrid role|visa sponsorship|staff position)\b|وظيفة شاغرة|دوام كامل|دوام جزئي|راتب شهري|توظيف موظف|مقر الشركة/i;

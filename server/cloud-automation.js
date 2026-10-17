@@ -7,6 +7,8 @@ let writeQueue = Promise.resolve();
 
 export function automationStoragePath(env=process.env) {
   if (env.RAM_AUTOMATION_DATA_FILE) return env.RAM_AUTOMATION_DATA_FILE;
+  const dataDir=String(env.RAM_DATA_DIR||'').trim();
+  if (dataDir) return join(dataDir,'ram-automation.json');
   const mount=String(env.RAILWAY_VOLUME_MOUNT_PATH||'').trim();
   return mount ? join(mount,'ram-automation.json') : null;
 }
